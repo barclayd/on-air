@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **30 application E2E tests and one visual regression test comparing twelve images**, preceded by credential-parser, PCM/WAV, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **33 application E2E tests and one visual regression test comparing twelve images**, preceded by credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -35,6 +35,7 @@ The bridge exists only when `E2E_TESTING` is explicitly compiled in. Ordinary De
 | Missed release | Microphone remains active when a release event is swallowed |
 | Permissions | Denied/restricted/start failure; delayed grant starts capture after release or applies to another hold; grant needs relaunch |
 | Transcription | Partial/unfinished results pasted; duplicate paste; fast results skipping blue; changed focus receiving text; failed clips not retryable; retry reopening microphone; stale results after lock |
+| Version formatting | Spoken/mixed version components left unformatted before paste, retry, or Copy; additional transcription requests caused by formatting; ordinary text changed |
 | Audio | Silence/loud PCM mapping, level decay, input change silently restarts capture, old callbacks affect a new hold |
 | Lifecycle | Sleep/lock/display changes leave capture active; cancelled completion hides a newer hold; quit leaves the panel/meter active |
 | Desktop integrity | Fn cycle changes foreground application or clipboard change count |
@@ -73,6 +74,8 @@ This is app-process E2E coverage with controlled OS inputs, not a claim that mac
 Before shipping input or window-management changes, use the normal signed app in Codex, Chrome, and Slack. Hold/release physical fn, try a short tap and fn+arrow/Delete, confirm the microphone indicator disappears on release, move focus between displays, and check a full-screen app. Confirm the menu's status and Quit action, and try the system Reduce Motion setting. Transcription state and insertion decisions are covered with fixtures. Core checks use a private pasteboard (never the general clipboard) to verify multi-item/multi-format restoration and protection of a newer user copy. `Tools/TranscriptionSmoke.swift` separately exercised the production Swift client against OpenAI for two consecutive generated-audio turns. The user verified physical fn, real microphone capture, recognition of AnyVan/ALM, and pasting on 3 October 2026. Cross-app/display/Space coverage and broader real-voice accuracy still need manual evaluation.
 
 Clipboard failure checks cover a payload exceeding the 32 MiB snapshot limit and an advertised representation whose provider returns no data. Both must leave the private pasteboard intact. Direct-input checks reconstruct a long transcript from the generated Unicode events, including emoji and combining characters, and reject newlines, control characters, and oversized graphemes before any events are created for delivery. These tests never post the events; they verify framing and preservation, not whether another app accepts synthetic Unicode input. Exercise that fallback manually in each supported destination before claiming compatibility.
+
+Version-formatting core checks cover 51 cases plus idempotence: case/spacing variants, mixed digits and words, tens/hundreds, leading zeroes, multiple versions, Unicode surroundings, unchanged prose and already formatted versions, and rejection of incomplete/unsupported sequences, sentence boundaries, URLs, ranges, and identifier fragments. Three app-process tests verify the production formatter runs after completion on the live, retry, and Copy paths.
 
 ## Explicit live-API checks
 

@@ -4,6 +4,8 @@ A native macOS dictation app with the visual design from the supplied On Air fil
 
 Audio streams to `gpt-live-transcribe` while fn is held, using low delay, English, and the hints **AnyVan** and **ALM**. There is no separate AI rewrite step. Failed recordings can be retried with `gpt-transcribe`. Audio is held only in memory, never written to disk.
 
+A local Swift rule formats clear dotted version numbers before insertion or Copy: **one dot two dot six → 1.2.6**. It requires at least three numeric components and a spoken “dot”, supports mixed words/digits and English number words through 999, and preserves surrounding text. Two-component phrases and unsupported/ambiguous number components stay unchanged. No additional API call is made.
+
 The key is imported from the literal `OPENAI_API_KEY` assignment in `~/.env` on first use and stored in macOS Keychain. The file is parsed, never executed. API keys and transcript contents are excluded from app diagnostic logs.
 
 ## Build and run
@@ -60,7 +62,7 @@ Each release includes a versioned DMG and an identical `On-Air.dmg` for the webs
 Tools/test.sh
 ```
 
-Runs 30 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for credential parsing, PCM/WAV framing, and clipboard preservation. Coverage includes final-only pasting, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 33 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes final-only pasting, formatted versions in live/retry/Copy results, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 

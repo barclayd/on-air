@@ -44,4 +44,6 @@ On 3 October 2026, a generated Daniel-voice recording said “Please use version
 
 `gpt-transcribe` (retry) returned `1.2.3` and `0.10.2`. `gpt-live-transcribe` still returned the version numbers as words, both with a spoken-to-written example in the prompt and with a more direct formatting instruction. The prompt is accepted, but this probe does **not** establish reliable version formatting for live dictation. No post-processing or extra model call was added. This was a small synthetic check, not a real-voice accuracy evaluation.
 
+Following the user's real-use report of inconsistent formatting, On Air now applies an approved local Swift rule to recognised dotted number sequences before paste or Copy. This is separate from the model behaviour measured above; it adds no API request and does not correct misrecognised audio. See [the rule's scope](DECISIONS.md) and [offline regression coverage](TESTING.md).
+
 Protocol references: [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription) and [file transcription](https://developers.openai.com/api/docs/guides/speech-to-text).

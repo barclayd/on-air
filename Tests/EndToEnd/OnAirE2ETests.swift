@@ -356,6 +356,49 @@ final class OnAirE2ETests: XCTestCase {
         XCTAssertFalse(blue.bool("meterRunning"))
     }
 
+    func testSpokenVersionNumbersAreFormattedBeforeFinalPaste() throws {
+        try launch()
+        try app.send("transcription", ["delay": 0.1, "text": "Use one dot two dot six and 0 dot ten dot two. Keep one dot two as spoken."])
+        try startHold()
+        try app.wait("settled hold") { $0.number("presence") > 0.9 }
+        XCTAssertEqual(app.last?.number("pasteCount"), 0)
+        try app.up()
+        let final = try app.wait("formatted transcript pasted") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(final.raw["pastedText"] as? String, "Use 1.2.6 and 0.10.2. Keep one dot two as spoken.")
+        XCTAssertEqual(final.number("transcriptionFinishes"), 1)
+        XCTAssertEqual(final.number("transcriptionRetries"), 0, "Formatting must not request another transcription")
+    }
+
+    func testFormattedVersionIsRetainedForCopyWhenFocusChanges() throws {
+        try launch()
+        try app.send("transcription", ["delay": 0.2, "text": "Version one dot two dot six."])
+        try startHold()
+        try app.wait("settled hold") { $0.number("presence") > 0.9 }
+        try app.up()
+        try app.send("focus", ["field": 2])
+        let ready = try app.wait("formatted copy available") { $0.idle && !$0.status.hasPrefix("Hold") }
+        XCTAssertEqual(ready.number("pasteCount"), 0)
+        XCTAssertEqual(ready.raw["pendingTranscript"] as? String, "Version 1.2.6.")
+        let copied = try app.send("copy")
+        XCTAssertEqual(copied.raw["copiedText"] as? String, "Version 1.2.6.")
+        XCTAssertEqual(copied.raw["pendingTranscript"] as? String, "")
+    }
+
+    func testRetryFormatsSpokenVersionsWithoutOpeningMicrophone() throws {
+        try launch()
+        try app.send("transcription", ["delay": 0.1, "fail": true])
+        try startHold()
+        try app.wait("settled hold") { $0.number("presence") > 0.9 }
+        try app.up()
+        try app.wait("retry offered") { $0.idle && $0.bool("canRetry") }
+        try app.send("transcription", ["delay": 0.1, "fail": false, "text": "Use two dot twenty-one dot six."])
+        try app.send("retry")
+        let final = try app.wait("formatted retry pasted") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(final.raw["pastedText"] as? String, "Use 2.21.6.")
+        XCTAssertEqual(final.number("starts"), 1)
+        XCTAssertEqual(final.number("transcriptionRetries"), 1)
+    }
+
     func testChangedFocusKeepsResultForExplicitCopy() throws {
         try launch()
         try app.send("transcription", ["delay": 0.2, "text": "Do not paste into the other field."])
