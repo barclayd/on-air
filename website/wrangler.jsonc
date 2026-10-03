@@ -4,6 +4,10 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "on-air",
   "compatibility_date": "2026-10-01",
+  // Wrangler runs this before deploy, so Workers Builds needs no build command of its own.
+  "build": {
+    "command": "bun run build"
+  },
   "assets": {
     "directory": "./dist"
   }
