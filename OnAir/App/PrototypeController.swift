@@ -14,6 +14,7 @@ final class PrototypeController {
     private var fadeAt = 0.0
     private var releaseLevel = 0.0
     private var releasePresence = 1.0
+    private var recordingMotionPhase = 0.0
     private var discarded = false
     private var envelope = LevelEnvelope()
     private var issue: String?
@@ -94,6 +95,7 @@ final class PrototypeController {
         let id = cycleID
         holdID = id
         startedAt = ProcessInfo.processInfo.systemUptime
+        recordingMotionPhase = Double.random(in: 0..<(2 * .pi))
         envelope = LevelEnvelope()
         discarded = false
         streamedBytes = 0
@@ -272,7 +274,8 @@ final class PrototypeController {
         let wave = phase == .listening || discarded ? 0 : GlowFrame.easeInOut(releaseTime / 0.25)
         let opacity = phase == .fading ? 1 - GlowFrame.easeInOut((now - fadeAt) / (discarded ? 0.18 : 0.7)) : 1
         return GlowFrame(time: elapsed, level: level, presence: presence, processing: processing,
-            wavePresence: wave, processingTime: releaseTime, opacity: opacity, reducedMotion: reducedMotion)
+            wavePresence: wave, processingTime: releaseTime, opacity: opacity, reducedMotion: reducedMotion,
+            motionPhase: recordingMotionPhase)
     }
 
     @objc private func suspend() {

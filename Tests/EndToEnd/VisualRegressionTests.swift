@@ -29,7 +29,7 @@ final class VisualRegressionTests: XCTestCase {
         }
         XCTAssertEqual(process.terminationStatus, 0, "See \(log.path)")
 
-        for state in ["recording", "processing", "quiet", "reduced-motion"] {
+        for state in ["recording", "recording-alternate", "processing", "quiet", "reduced-motion", "reduced-recording"] {
             for theme in ["dark", "light"] {
                 let name = "\(state)-\(theme)"
                 let baselineURL = try XCTUnwrap(Bundle.module.url(forResource: name, withExtension: "png", subdirectory: "Baselines"))

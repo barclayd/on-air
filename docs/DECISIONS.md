@@ -6,7 +6,7 @@ Interview date: 3 October 2026.
 
 The initial delivery was a visual prototype. On 3 October 2026 the user explicitly approved adding working transcription and pasting, reusing the OpenAI key in `~/.env`. The functional build is installed and the user verified that the spoken AnyVan/ALM sentence was transcribed and pasted correctly. Setup flows, settings windows, and additional product screens remain deferred.
 
-- Voice-responsive, soft red glow along the bottom of the screen while holding fn / Globe.
+- Voice-responsive, soft red glow along the bottom of the screen while holding fn / Globe. Subtle variations in height and pulse strength drift across it, with a different starting phase per hold. The user approved decorative asymmetry when directional audio is unavailable; this does not claim to locate the speaker.
 - On release, cool to blue, collapse into a thin travelling waveform, then fade out.
 - The film's title cards, captions, fn illustration, demo Notes window, and word-by-word typing are presentation elements, not app UI.
 - Keep the overlay on the destination app's display, chosen at fn-down. No mouse interception or focus stealing.

@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **30 application E2E tests and one visual regression test comparing eight images**, preceded by credential-parser, PCM/WAV, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **30 application E2E tests and one visual regression test comparing twelve images**, preceded by credential-parser, PCM/WAV, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -40,7 +40,7 @@ The bridge exists only when `E2E_TESTING` is explicitly compiled in. Ordinary De
 | Desktop integrity | Fn cycle changes foreground application or clipboard change count |
 | Motion | Reduce Motion responds to voice/time; glow/waveform geometry or colors drift from the reference images |
 
-The red/blue E2E checks cache the **actual overlay's hosting view** into a bitmap, without capturing other apps. Their assertions inspect transparency and color distribution. The eight fixed visual references separately compare `GlowRenderer` at known frames, in dark and light contexts, with a small pixel tolerance. The lower screen band has its own comparison so a missing thin waveform cannot hide in an otherwise unchanged image.
+The red/blue E2E checks cache the **actual overlay's hosting view** into a bitmap, without capturing other apps. Their assertions inspect transparency and color distribution. The twelve fixed visual references separately compare `GlowRenderer` at known frames, in dark and light contexts, with a small pixel tolerance. Recording references include opposite decorative phases and a static Reduce Motion recording. The lower screen band has its own comparison so a missing thin waveform cannot hide in an otherwise unchanged image.
 
 ## Failure evidence
 

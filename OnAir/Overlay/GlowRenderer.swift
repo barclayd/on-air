@@ -23,20 +23,24 @@ enum GlowRenderer {
         let core = interpolate([255, 104, 72], [130, 180, 255], mix)
         let centre = frame.reducedMotion ? 0.5 : 0.5 + 0.32 * sin(frame.processingTime * 1.8)
         let padding = 300 * scale
+        let texture = RecordingTexture(time: t, phase: frame.motionPhase,
+            level: level, reducedMotion: frame.reducedMotion)
 
         var glow = Path()
         glow.move(to: CGPoint(x: -padding, y: h + 200 * scale))
         glow.addLine(to: CGPoint(x: -padding, y: h))
         for index in 0...64 {
             let u = Double(index) / 64
+            let x = u * (w + padding * 2) - padding
+            let screenPosition = min(1, max(0, x / max(1, w)))
             let hump = exp(-pow(u - 0.5, 2) / 0.09)
-            let recording = height * (0.55 + 0.45 * hump)
+            let recording = height * (0.55 + 0.45 * hump + texture.heightBias(at: screenPosition))
                 + height * 0.16 * (0.3 + level)
                 * (sin(u * 6 + t * 1.3) * 0.6 + sin(u * 11 - t * 2.1) * 0.4)
             let envelope = exp(-pow((u - centre) / 0.2, 2))
             let processing = height * (0.6 + 0.9 * envelope)
             glow.addLine(to: CGPoint(
-                x: u * (w + padding * 2) - padding,
+                x: x,
                 y: h - (recording * (1 - mix) + processing * mix)
             ))
         }
@@ -65,9 +69,15 @@ enum GlowRenderer {
                 endPoint: CGPoint(x: 0, y: h - max(1, height * 2.2))
             ))
             let hot = alpha * (0.55 + 0.45 * level * (1 - mix) + 0.2 * mix)
+            let edgeStops = (0...8).map { index in
+                let position = Double(index) / 8
+                let gain = 1 + (texture.intensity(at: position) - 1) * (1 - mix)
+                return Gradient.Stop(color: core.opacity(hot * 0.6 * gain), location: position)
+            }
             layer.fill(
                 Path(CGRect(x: -padding, y: h - 12 * scale, width: w + 2 * padding, height: 12 * scale)),
-                with: .color(core.opacity(hot * 0.6))
+                with: .linearGradient(Gradient(stops: edgeStops),
+                    startPoint: CGPoint(x: 0, y: h), endPoint: CGPoint(x: w, y: h))
             )
         }
 
