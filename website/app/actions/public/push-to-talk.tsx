@@ -2,7 +2,6 @@ import { clientEntry, css, type Handle, on, ref } from 'remix/component'
 
 import { approach, drawLight, type Light, speechLevel } from './light.ts'
 import { NotesScreen } from './notes-screen.tsx'
-import { bezel } from './styles.ts'
 
 const PHRASES = [
   'Had a lovely weekend in Napa Valley with Johnny Appleseed, then drove up the coast to Mendocino for oysters and a very windy picnic.',
@@ -126,7 +125,6 @@ export const PushToTalk = clientEntry(import.meta.url, function PushToTalk(handl
       tabIndex={0}
       aria-label="Hold to dictate"
       mix={[
-        bezel,
         demoStyle,
         ref(animate),
         on('pointerdown', (event) => {
@@ -157,17 +155,19 @@ export const PushToTalk = clientEntry(import.meta.url, function PushToTalk(handl
   )
 })
 
+// The screen only; the landing page draws the laptop around it.
 const demoStyle = css({
-  width: 'min(1040px, 88vw)',
+  '--screen-radius': '12px 12px 2px 2px',
+  borderRadius: 'var(--screen-radius)',
   aspectRatio: '16 / 10',
-  margin: '0 auto',
+  flexShrink: 0,
   cursor: 'pointer',
   touchAction: 'none',
   userSelect: 'none',
   WebkitUserSelect: 'none',
   WebkitTouchCallout: 'none',
   outline: 'none',
-  '&:focus-visible': { boxShadow: '0 0 0 2px var(--fg), 0 50px 120px rgba(0, 0, 0, 0.6)' },
+  '&:focus-visible': { boxShadow: '0 0 0 2px var(--fg)' },
 })
 
 const hintStyle = css({
