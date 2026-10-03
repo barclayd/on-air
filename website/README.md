@@ -11,7 +11,16 @@ bun run start      # production mode, no build step
 bun run test
 bun run typecheck
 bun run lint       # bun run format to fix
+bun run build      # prerender into dist/
+bun run preview    # build, then serve dist/ with wrangler dev on http://localhost:8787
+bun run deploy     # build, then wrangler deploy
 ```
+
+## Deploy
+
+The site deploys to Cloudflare as a Worker that serves static assets only (`wrangler.jsonc`). `scripts/build.ts` renders `/` through the router and writes the HTML, every fingerprinted browser module, and `public/` into `dist/`. No server code runs on Cloudflare, so the page can't depend on the request.
+
+`public/_headers` sets long-lived caching on `/assets/*`. It also serves `.ts`/`.tsx` modules as JavaScript, because Cloudflare would otherwise send them as `video/mp2t`.
 
 ## Layout
 

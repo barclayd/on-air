@@ -11,6 +11,7 @@ export const assets = createAssetServer({
   denyFiles: ['app/**/*.test.*'],
   sourceMaps: isDevelopment ? 'external' : undefined,
   minify: !isDevelopment,
+  fingerprint: !isDevelopment,
   watch: isDevelopment,
 })
 
