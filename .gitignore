@@ -5,3 +5,7 @@ xcuserdata/
 .DS_Store
 .env
 .env.*
+__pycache__/
+*.py[cod]
+*.p12
+*.p8

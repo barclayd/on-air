@@ -1,6 +1,6 @@
 # Distribution recommendation
 
-Researched 3 October 2026. This is a release plan; no binary release, signing certificate, updater, or setup UI has been published or added.
+Researched 3 October 2026. The release workflow is now implemented; see [Releasing On Air](RELEASING.md) for configuration and operation. Signing credentials are still required. No binary release, updater, or setup UI has been published or added.
 
 **Start with a Developer ID-signed, Apple-notarized DMG on GitHub Releases.** Use manual downloads for the first tester group. Add Sparkle 2 updates before expanding to a broad audience, and optionally add a Homebrew cask later. This fits On Air's existing native, unsandboxed architecture and avoids an application backend.
 
@@ -30,7 +30,7 @@ Before a general release, I recommend:
 
 - A small way to enter, replace, and remove the user's own API key, keeping Keychain storage. The current `~/.env` import is suitable for this development setup or technical testers, but awkward for ordinary users. Never bundle the developer's key.
 - Concise setup guidance for Microphone, Accessibility, and the Globe-key setting. This is a future product decision: the user's earlier request to defer setup UI remains respected in the current build.
-- An app icon, version/build numbering, and release notes. No app-icon asset or release pipeline currently exists.
+- An app icon. The pipeline now sets version/build numbers and generates release notes; no app-icon asset currently exists.
 - A clear explanation that speech is sent to OpenAI and recordings are retained only temporarily by the app. Local memory-only handling should not be described as a guarantee about the provider's retention.
 - Fresh-install and upgrade checks in Codex, Chrome, and Slack, plus tests on the oldest macOS and Intel hardware we intend to advertise. Verify permission and Keychain behavior when moving from development signing to Developer ID signing.
 
@@ -44,7 +44,7 @@ Before a general release, I recommend:
 
 Apple documents DMG packaging and notarization as supported direct-distribution workflows. Notarization is an automated security check, not App Store review. [Packaging Mac software](https://developer.apple.com/documentation/xcode/packaging-mac-software-for-distribution), [custom notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
-Start with a local, repeatable release script. Once validated, it can run in GitHub Actions using an isolated temporary keychain and repository/environment secrets for signing and notarization credentials. Keep release credentials out of pull-request jobs. The existing UI tests require a logged-in GUI session, so retain a suitable Mac test runner instead of assuming every hosted runner supports them. [GitHub's macOS signing workflow](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications).
+The release script and GitHub Actions workflow use an isolated temporary keychain and environment secrets for signing and notarization credentials. Keep release credentials out of pull-request jobs. The existing UI tests require a logged-in GUI session, so retain a suitable Mac test runner instead of assuming every hosted runner supports them. [GitHub's macOS signing workflow](https://docs.github.com/en/actions/how-tos/deploy/deploy-to-third-party-platforms/sign-xcode-applications).
 
 ## Updates and optional channels
 
@@ -52,4 +52,4 @@ Start with a local, repeatable release script. Once validated, it can run in Git
 
 A Homebrew cask can later point to the same versioned DMG and checksum. Use an upstream tap initially; acceptance into the central cask repository is a separate review with eligibility requirements. It supplements the normal download, rather than becoming a prerequisite. [Homebrew taps](https://docs.brew.sh/How-to-Create-and-Maintain-a-Tap), [cask acceptance](https://docs.brew.sh/Acceptable-Casks).
 
-The next concrete milestone is a notarized DMG for a small tester group. It requires the distribution signing identity, a release script, and a fresh-install check. A broad release should additionally resolve API-key setup and permission guidance.
+The next concrete milestone is a notarized DMG for a small tester group. It requires configuring the distribution signing identity and notarization credentials, then running the pipeline and a fresh-install check. A broad release should additionally resolve API-key setup and permission guidance.

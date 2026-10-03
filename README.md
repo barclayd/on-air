@@ -46,6 +46,10 @@ These are native macOS permission dialogs; a custom onboarding flow is deferred.
 - On API failure or a 20-second finalisation timeout, one failed clip stays in memory for up to five minutes for **Retry transcription**. Retry never activates the microphone. A new hold, success, sleep/lock, or quitting clears it. Uncopied results also expire after five minutes.
 - Capture retention is bounded to eight minutes per hold; ordinary dictations are expected to be 10–60 seconds. The socket stays warm while the app is running; the microphone does not.
 
+## Release pipeline
+
+GitHub Actions checks every pull request with core tests and a universal unsigned DMG build. Version tags trigger Developer ID signing, Apple notarization, and GitHub Releases publication after verification. Manual runs can produce a notarized artifact without publishing. See [release setup and instructions](docs/RELEASING.md) for the Apple credentials and versioning.
+
 ## Regression tests
 
 ```sh

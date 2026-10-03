@@ -1,0 +1,134 @@
+name: Release On Air
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Version tag (may be uncreated when publish is false)
+        required: true
+        type: string
+      publish:
+        description: Publish to GitHub Releases after notarization
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+# Do not interrupt a notarization or race two publishers for the same tag.
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: release
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
+    outputs:
+      tag: ${{ steps.metadata.outputs.tag }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      commit: ${{ steps.source.outputs.commit }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # A manual preview builds main without creating a tag or a release.
+          # Publishing always builds an existing tag and verifies its ancestry.
+          ref: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish && 'main' || format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Validate version and restrict releases to commits on main
+        id: metadata
+        run: |
+          python3 Tools/release.py metadata --tag "$RELEASE_TAG" --build "$GITHUB_RUN_NUMBER"
+          git merge-base --is-ancestor HEAD origin/main
+      - name: Record exact source commit
+        id: source
+        run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Test release validation and failure handling
+        run: python3 -m unittest discover -s Tools/ReleaseTests -v
+      - name: Check audio, credentials, and clipboard preservation
+        run: Tools/test-core.sh
+      - name: Build, sign, notarize, and staple app and DMG
+        env:
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          APPLE_CERTIFICATE_P12_BASE64: ${{ secrets.APPLE_CERTIFICATE_P12_BASE64 }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_NOTARY_KEY_P8_BASE64: ${{ secrets.APPLE_NOTARY_KEY_P8_BASE64 }}
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+        run: python3 Tools/release.py package --tag "$RELEASE_TAG" --build "$GITHUB_RUN_NUMBER"
+      - name: Remove signing material even after interruption
+        if: always()
+        shell: bash
+        run: |
+          for signing_dir in "$RUNNER_TEMP"/on-air-signing-*; do
+            [[ -d "$signing_dir" ]] || continue
+            security delete-keychain "$signing_dir/release.keychain-db" 2>/dev/null || true
+            rm -rf "$signing_dir"
+          done
+      - name: Upload verified release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: notarized-release
+          path: .build/release/dist/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Retain build and notarization diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: release-diagnostics
+          path: .build/release/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+
+  publish:
+    needs: package
+    if: github.event_name == 'push' || inputs.publish
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      RELEASE_TAG: ${{ needs.package.outputs.tag }}
+      RELEASE_COMMIT: ${{ needs.package.outputs.commit }}
+      PRERELEASE: ${{ needs.package.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ needs.package.outputs.commit }}
+          persist-credentials: false
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: notarized-release
+          path: dist
+      - name: Verify provenance and final checksums before publishing
+        run: |
+          python3 Tools/release.py verify-publishable --directory dist --tag "$RELEASE_TAG" --commit "$RELEASE_COMMIT"
+          cd dist
+          sha256sum --check ./*.sha256
+      - name: Publish complete assets without overwriting an existing release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          [[ "$(gh api "repos/$GITHUB_REPOSITORY/commits/$RELEASE_TAG" --jq .sha)" == "$RELEASE_COMMIT" ]]
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo 'This release already exists. Use a new version or remove a failed draft before retrying.' >&2
+            exit 1
+          fi
+          # A failed upload leaves a draft, never a partial public release.
+          gh release create "$RELEASE_TAG" dist/*.dmg dist/*.sha256 dist/release.json \
+            --verify-tag --draft --generate-notes --title "On Air $RELEASE_TAG" \
+            --prerelease="$PRERELEASE"
+          if [[ "$PRERELEASE" == true ]]; then
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest
+          fi
