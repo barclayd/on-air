@@ -40,6 +40,7 @@ These are native macOS permission dialogs; a custom onboarding flow is deferred.
 - The system-selected microphone is pinned for each hold with an `AVCaptureSession`. A disconnected input or capture failure stops capture instead of silently changing microphones mid-hold.
 - The microphone stops immediately on release. Late permission replies and queued audio callbacks cannot restart it.
 - Sleep, session lock, or a display configuration change clears the overlay and stops capture.
+- The red glow subtly varies its height and pulse intensity across the screen. Voice level drives the strength; a smooth decorative drift gives each hold a different starting balance. This is not sound-source tracking.
 - Reduce Motion uses a quiet, static glow and line with colour/opacity transitions.
 - Only a completed transcript is pasted. If the original field or its selection has changed, use **Copy transcript** in the menu. Secure fields and unrecognised accessibility targets also use this fallback.
 - Clipboard items and formats are restored after ⌘V; a newer user copy is never overwritten.
@@ -56,7 +57,7 @@ GitHub Actions checks every pull request with core tests and a universal unsigne
 Tools/test.sh
 ```
 
-Runs 30 app-process E2E tests and a visual regression test covering eight reference images, plus checks for credential parsing, PCM/WAV framing, and clipboard preservation. Coverage includes final-only pasting, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 30 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for credential parsing, PCM/WAV framing, and clipboard preservation. Coverage includes final-only pasting, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 
