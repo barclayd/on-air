@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **38 application E2E tests and one visual regression test comparing twelve images**, preceded by settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **42 application E2E tests and one visual regression test comparing twelve images**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -36,6 +36,7 @@ The bridge exists only when `E2E_TESTING` is explicitly compiled in. Ordinary De
 | Permissions | Denied/restricted/start failure; delayed grant starts capture after release or applies to another hold; grant needs relaunch |
 | Transcription | Partial/unfinished results pasted; duplicate paste; fast results skipping blue; changed focus receiving text; failed clips not retryable; retry reopening microphone; stale results after lock |
 | Version formatting | Spoken/mixed version components left unformatted before paste, retry, or Copy; additional transcription requests caused by formatting; ordinary text changed |
+| Onboarding | Unrequested prompts; duplicate windows; false permission grants; completion without a verified key; revocation ignored; closing Settings cancels setup; decorative animation records audio |
 | Settings | Missing standard Settings command; duplicate windows; lost notes; false key-verification success; key resurrection after removal; configuration changes interrupting dictation; window close leaving the app in the Dock |
 | Audio | Silence/loud PCM mapping, level decay, input change silently restarts capture, old callbacks affect a new hold |
 | Lifecycle | Sleep/lock/display changes leave capture active; cancelled completion hides a newer hold; quit leaves the panel/meter active |
@@ -81,6 +82,14 @@ Version-formatting core checks in `Tools/VersionFormattingChecks.swift` cover 13
 Run the fast fixtures with `Tools/test-core.sh`. Changes to the fixture file itself trigger the app CI workflow, including when production source is unchanged.
 
 Settings core checks use isolated UserDefaults, memory-only credentials, and a controlled verifier that can return replies after cancellation. They cover immediate notes persistence, prompt composition, length validation, masked keys, rejected keys, Keychain save/remove failures, closing during verification, replacement races, and removal races. They do not access the real Keychain or network. Four Settings app-process tests invoke the standard application Settings menu command and exercise the real model/window/controller with those OS boundaries substituted. Their `settings.png` artifacts capture the native window for review; these are inspection evidence, not new pixel baselines. Settings tests briefly activate their isolated app and restore menu-bar-only mode when closed.
+
+Onboarding checks in `Tools/OnboardingChecks.swift` cover first-launch decisions, repeated permission clicks, stale permission callbacks, denial/restriction recovery, the three System Settings destinations, explicit fn-setting confirmation, key validation, completion persistence, revocation at Done, and shared Settings/setup verification ownership. These run in CI without real permissions, credentials, or network access. Four onboarding app-process tests exercise the production windows, permission polling, complete setup-to-dictation flow, and failure recovery. Window captures cover initial permissions, keyboard help, API key entry/errors, and the ready state. They are visual inspection evidence, not pixel baselines.
+
+For a focused run: `Tools/test.sh --filter OnboardingE2ETests`. First-launch presentation is opt-in for the fixture so unrelated dictation tests retain their isolated starting state. The `ON_AIR_E2E_OPEN_SETTINGS=1` fixture flag is reserved for a manual navigation smoke test; it allows clicking setup's buttons to open real System Settings panes, but still never requests or grants real permissions. Automated runs do not set it.
+
+The three setup buttons were manually verified on macOS 27 to open Microphone, Device Control and Data Access, and Keyboard. The form was also exercised through native controls with a fake offline key; no real permissions or credentials were changed.
+
+Before shipping onboarding, check the three destination panes on supported macOS versions, grant/revoke access in the normal signed app, close/reopen setup, verify a real key, and try physical fn dictation. The fn/Globe action is intentionally confirmed by the user, not marked as system-verified. Deep links are macOS conventions rather than a guaranteed public routing API; the app includes manual paths.
 
 ## Explicit live-API checks
 

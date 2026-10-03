@@ -36,6 +36,7 @@ final class SettingsModel {
     @ObservationIgnored private var verification: Task<Void, Never>?
     @ObservationIgnored private var verificationID = UUID()
     @ObservationIgnored private var loaded = false
+    @ObservationIgnored private var presentationOwners: Set<String> = []
 
     init(defaults: UserDefaults = .standard,
          credentials: any CredentialStoring = KeychainCredentials(),
@@ -49,6 +50,18 @@ final class SettingsModel {
     }
 
     var canVerify: Bool { !keyDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !verifying }
+
+    var hasSavedKey: Bool { (try? credentials.read()) != nil }
+
+    func present(owner: String) {
+        presentationOwners.insert(owner)
+        appear()
+    }
+
+    func dismiss(owner: String) {
+        guard presentationOwners.remove(owner) != nil else { return }
+        if presentationOwners.isEmpty { disappear() }
+    }
 
     func appear() {
         guard !loaded else { return }
