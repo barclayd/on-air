@@ -20,7 +20,9 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - Personal native macOS app, Swift only, built-in frameworks, stable development signing, no App Sandbox.
 - Benchmark representative **10-, 30-, and 60-second** dictations before choosing a transcription engine.
 - English with British spelling; use **AnyVan** and **ALM** as initial keyword hints. Vocabulary editor later.
-- The shared live/retry prompt adds: “Write spoken version numbers as digits separated by periods, for example version 1.2.3.” It makes no assumption about the topic of the dictation. This is model guidance, not a guaranteed conversion or a separate rewrite step. A synthetic API check converted the versions in the retry path but still returned words in the live path; see [benchmark notes](BENCHMARKS.md).
+- The shared live/retry prompt adds: “Write spoken version numbers as digits separated by periods, for example version 1.2.3.” It makes no assumption about the topic of the dictation. A synthetic API check converted the versions in the retry path but still returned words in the live path; see [benchmark notes](BENCHMARKS.md).
+- The user subsequently approved a deterministic local Swift formatter. Completed live and retry results use the same formatter before insertion or retention for Copy. Three or more numeric components with at least one spoken “dot” become a dotted number (`one dot two dot six` → `1.2.6`). Components accept digits, English cardinal words through 999, or digit-by-digit words preserving leading zeroes. The rule leaves two-component phrases, ordinary prose, existing numeric versions, and unsupported components unchanged; it does not cross sentence/newline boundaries or infer missing/misheard numbers. No additional API call or AI cleanup is introduced.
+- Regression fixtures require conservative handling of fractional/large-scale continuations, adjacent signs/ranges, currency/percent markers, paths, and invisible identifier joiners. These keep the entire ambiguous phrase unchanged. Independent prose after a valid version (such as “and one hundred examples”) and terminal punctuation still permit conversion. This is a bounded textual rule, not semantic recognition of every possible version context.
 - Prioritise compatibility with **Codex, Chrome, and Slack**.
 - Match Wispr Flow's responsive hold/speak/release experience. No separate AI cleanup or rewriting stage.
 - Prefer fewer recognition errors at about one second over roughly half a second with noticeably more mistakes. Around 700 ms remains an initial aspiration, not a verified performance guarantee.
@@ -29,6 +31,7 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - Auto-paste only a completed transcript, never accumulated partial text on a deadline.
 - Only auto-paste if the original text field is still focused. Otherwise keep one temporary result available for Copy, without a history.
 - Preserve clipboard contents around pasting; don't overwrite a newer clipboard change when restoring.
+- If a complete clipboard snapshot is unavailable or exceeds 32 MiB, try Unicode keyboard input for single-line text, leaving the clipboard untouched. Recheck the original destination and released modifiers before posting to that application. Newlines/control characters and unsupported payloads retain the existing Copy fallback. This is a delivery fallback, not a transcript rewrite.
 - On transcription failure, retain only the failed clip in memory for up to five minutes. Offer Retry transcription, which does not activate the microphone. Clear it after success, a new dictation, or quitting. Never persist audio to disk.
 - API key in Keychain. No On Air cloud account.
 - Settings, editable vocabulary, launch at login, sounds, and guided setup remain deferred.
@@ -39,6 +42,12 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - The initial benchmark selected `gpt-live-transcribe` at low delay. Generated 10/30/60-second fixtures finished 0.39/0.46/0.67 seconds after release. These are provisional synthetic measurements, not an accuracy evaluation of the user's voice. See `BENCHMARKS.md`.
 - The app imports the authorised key from `~/.env` into Keychain on first use. It does not execute that file, expose the key in logs, or copy it into the repository.
 - Automatic finalisation has a 20-second deadline. Retention is bounded to eight minutes per hold; retry uses a memory-only WAV upload and never activates capture.
+
+### Clipboard-dependent missing insertion
+
+On 3 October, diagnostic logs showed completed transcripts and an unchanged destination, followed by a failed clipboard snapshot. The same installed build later pasted successfully once the clipboard was readable again. The exact earlier clipboard representation was not recorded; the failure could have been unavailable data, the size limit, or a change during capture. The version-formatting update changed only the transcription prompt and did not alter the insertion code.
+
+[OpenWhispr's clipboard manager](https://github.com/OpenWhispr/openwhispr/blob/85b01157f597036ad88c4901cea8d71ab8e46a43/src/helpers/clipboard.js#L795-L870) saves common text, HTML, RTF, and image formats, then restores them after a native Command-V paste. On Air retains its stricter preservation of arbitrary formats and multiple items and uses clipboard-free input when a full snapshot cannot be made. Fixed diagnostic reason labels identify future failures without recording transcripts, clipboard contents, or field contents.
 
 ## Research corrections
 

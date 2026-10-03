@@ -185,7 +185,7 @@ final class PrototypeController {
             do {
                 let result = try await (retry ? self.transcriber.retry(audio) : self.transcriber.finish())
                 guard !Task.isCancelled, self.cycleID == id else { return }
-                let text = result.trimmingCharacters(in: .whitespacesAndNewlines)
+                let text = VersionNumberFormatter.format(result.trimmingCharacters(in: .whitespacesAndNewlines))
                 self.clearRecovery()
                 if text.isEmpty { self.issue = "No speech recognised — try again" }
                 else {

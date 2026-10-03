@@ -27,6 +27,8 @@ struct CoreChecks {
         try check(MicrophoneMeter.level(pcm: pcm) > 0.9, "Signed little-endian PCM drives the meter")
         print("PASS: PCM energy and lossless PCM16 WAV framing")
 
+        try VersionFormattingChecks.run()
+
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
         let first = NSPasteboardItem()
@@ -48,6 +50,56 @@ struct CoreChecks {
         try check(!snapshot.restore(board, ifUnchanged: ours), "Do not restore over newer user data")
         try check(board.string(forType: .string) == "New user copy", "The newer user clipboard must survive")
         print("PASS: clipboard formats, multiple items, and concurrent user-copy protection")
+
+        let large = NSPasteboardItem()
+        let largeData = Data(repeating: 0x5a, count: 32 * 1024 * 1024 + 1)
+        let binaryType = NSPasteboard.PasteboardType("com.onair.large-fixture")
+        large.setData(largeData, forType: binaryType)
+        board.clearContents(); board.writeObjects([large])
+        let largeCount = board.changeCount
+        try check(ClipboardSnapshot.capture(board) == nil, "Large clip must use a clipboard-free fallback")
+        try check(board.changeCount == largeCount, "Failed snapshot must not mutate clipboard")
+        try check(board.data(forType: binaryType) == largeData, "Large clipboard data must remain intact")
+
+        guard let source = CGEventSource(stateID: .privateState) else { throw CheckFailure(message: "Create test event source") }
+        let sample = "Version 1.2.3 — café 👩🏽‍💻 and e\u{301} stay intact. " + String(repeating: "Long dictation. ", count: 40)
+        guard let events = UnicodeInsertion.events(for: sample, source: source) else { throw CheckFailure(message: "Create Unicode events") }
+        var restoredText = ""
+        try check(events.count > 2 && events.count % 2 == 0, "Long text uses complete down/up event pairs")
+        for index in stride(from: 0, to: events.count, by: 2) {
+            for (event, type) in [(events[index], CGEventType.keyDown), (events[index + 1], CGEventType.keyUp)] {
+                try check(event.type == type && event.flags.isEmpty, "Balanced Unicode events with no shortcut modifiers")
+                try check(event.getIntegerValueField(.keyboardEventKeycode) == 0, "Never send Return or Tab")
+            }
+            var count = 0
+            var units = [UniChar](repeating: 0, count: 20)
+            events[index].keyboardGetUnicodeString(maxStringLength: units.count, actualStringLength: &count, unicodeString: &units)
+            try check(count > 0 && count <= 20, "Bounded event payload")
+            restoredText += String(decoding: units.prefix(count), as: UTF16.self)
+        }
+        try check(restoredText == sample, "Unicode event stream preserves long text, emoji, and combining characters")
+        for unsafe in ["", "Send\nmessage", "Send\rmessage", "Next\tfield", "Cancel\u{1b}", "Para\u{2029}graph", "a" + String(repeating: "\u{301}", count: 21)] {
+            try check(UnicodeInsertion.events(for: unsafe, source: source) == nil, "Unsafe or oversized grapheme must fall back to Copy")
+        }
+        try check(board.changeCount == largeCount, "Building direct insertion must leave clipboard unchanged")
+
+        let missingProvider = UnavailableClipboardProvider()
+        let promised = NSPasteboardItem()
+        promised.setString("Keep this readable representation", forType: .string)
+        let unavailableType = NSPasteboard.PasteboardType("com.onair.unavailable-fixture")
+        promised.setDataProvider(missingProvider, forTypes: [unavailableType])
+        board.clearContents(); board.writeObjects([promised])
+        let promisedCount = board.changeCount
+        try check(ClipboardSnapshot.capture(board) == nil, "Unreadable promised representation must use a clipboard-free fallback")
+        try check(board.changeCount == promisedCount, "Unreadable promise must not mutate clipboard")
+        try check(board.string(forType: .string) == "Keep this readable representation", "Keep readable data when another representation is unavailable")
+        print("PASS: oversized/unreadable clipboard preservation and Unicode insertion framing/control-character rejection (events never posted)")
     }
     struct CheckFailure: Error { let message: String }
+}
+
+private final class UnavailableClipboardProvider: NSObject, NSPasteboardItemDataProvider {
+    func pasteboard(_ pasteboard: NSPasteboard?, item: NSPasteboardItem, provideDataForType type: NSPasteboard.PasteboardType) {
+        // Reproduce an advertised representation whose owner cannot provide data.
+    }
 }

@@ -7,5 +7,6 @@ xcrun swiftc -swift-version 6 -parse-as-library \
     OnAir/Audio/MicrophoneInput.swift OnAir/Audio/MicrophoneMeter.swift \
     OnAir/Transcription/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
     OnAir/Transcription/OpenAITranscriber.swift OnAir/Paste/TranscriptInserter.swift \
-    Tools/CoreChecks.swift -o .build/core-tests/checks
+    OnAir/Transcription/VersionNumberFormatter.swift \
+    Tools/VersionFormattingChecks.swift Tools/CoreChecks.swift -o .build/core-tests/checks
 .build/core-tests/checks
