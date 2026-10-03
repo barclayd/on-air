@@ -10,3 +10,9 @@
   Content-Type: text/javascript; charset=utf-8
 /*.tsx
   Content-Type: text/javascript; charset=utf-8
+
+# `frame-ancestors` (CSP) replaces the deprecated X-Frame-Options. Only
+# danbarclay.dev (and localhost during dev) may embed this site in a frame;
+# everywhere else is blocked.
+/*
+  Content-Security-Policy: frame-ancestors 'self' https://danbarclay.dev https://*.danbarclay.dev http://localhost:* http://127.0.0.1:*
