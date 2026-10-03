@@ -19,12 +19,27 @@ enum VersionNumberFormatter {
         let hundred = #"hundred(?:\h+and(?=\h+(?:"# + remainder + #")(?![\p{L}\p{M}\p{N}_])))?"#
         let atom = #"(?:[0-9]+|"# + hundred + "|" + words + #")(?![\p{L}\p{M}\p{N}_])"#
         let component = atom + #"(?:[\h-]+"# + atom + #")*"#
-        let pattern = #"(?<![\p{L}\p{M}\p{N}_./\\@+\-])"# + component
-            + #"(?:(?:\h+dot\h+|\.)"# + component + #"){2,}(?![\p{L}\p{M}\p{N}_/@+\-])"#
+        // Signs, currency, path separators, and invisible joiners can make this
+        // part of a larger token. A period may end a sentence, so check it below.
+        let adjacent = #"[\p{L}\p{M}\p{N}\p{Cf}\p{Pd}\p{Sc}_/\\@+−%‰]"#
+        let pattern = "(?<!" + adjacent + #")(?<!\.)"# + component
+            + #"(?:(?:\h+dot\h+|\.)"# + component + "){2,}(?!" + adjacent + ")"
         return try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
     }()
     private static let previousWord = try! NSRegularExpression(pattern: #"([\p{L}]+)\h*$"#)
-    private static let followingDot = try! NSRegularExpression(pattern: #"^\h+dot\b"#, options: .caseInsensitive)
+    private static let followingDot = try! NSRegularExpression(
+        pattern: #"^(?:\h+dot\b|\.+[\p{L}\p{M}\p{N}\p{Cf}_])"#, options: .caseInsensitive)
+    // A fractional or large-scale continuation makes the last component ambiguous.
+    // Keep the whole phrase instead of turning just its integer prefix into a version.
+    private static let numberContinuation: NSRegularExpression = {
+        let scale = #"(?:hundred|thousand|million|billion|trillion|quadrillion|quintillion)"#
+        let fraction = #"(?:half|halves|quarters?|thirds?|fourths?|fifths?|sixths?|sevenths?|eighths?|ninths?|tenths?|"# + scale + #"ths?)"#
+        let fractionPrefix = #"(?:and\h+)?(?:(?:a|one|two|three|four|five|six|seven|eight|nine)\h+)?"#
+        // "...six and one hundred examples" is independent prose; only a
+        // fractional continuation may include "and" or a numerator here.
+        let pattern = #"^\h+(?:"# + fractionPrefix + fraction + "|" + scale + #"s?)\b"#
+        return try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
+    }()
 
     static func format(_ text: String) -> String {
         let source = text as NSString
@@ -42,7 +57,7 @@ enum VersionNumberFormatter {
             }
             // Never format a prefix/suffix of a longer unsupported dotted sequence.
             guard followingDot.firstMatch(in: after, range: NSRange(after.startIndex..., in: after)) == nil else { continue }
-            if after.first == ".", let next = after.dropFirst().first, next.isLetter || next.isNumber { continue }
+            guard numberContinuation.firstMatch(in: after, range: NSRange(after.startIndex..., in: after)) == nil else { continue }
             let components = separator.stringByReplacingMatches(in: candidate,
                 range: NSRange(candidate.startIndex..., in: candidate), withTemplate: "|").components(separatedBy: "|")
             let numbers = components.compactMap(number)

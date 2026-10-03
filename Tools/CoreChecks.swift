@@ -27,50 +27,7 @@ struct CoreChecks {
         try check(MicrophoneMeter.level(pcm: pcm) > 0.9, "Signed little-endian PCM drives the meter")
         print("PASS: PCM energy and lossless PCM16 WAV framing")
 
-        let versions = [
-            ("one dot two dot six", "1.2.6"),
-            ("One DOT Two DoT Six.", "1.2.6."),
-            ("Use (one dot two dot six), please.", "Use (1.2.6), please."),
-            ("Use 1 dot two dot 6.", "Use 1.2.6."),
-            ("Use 1.2 dot six.", "Use 1.2.6."),
-            ("one dot 2.6", "1.2.6"),
-            ("Version zero dot ten dot two", "Version 0.10.2"),
-            ("two dot twenty-one dot one hundred and six", "2.21.106"),
-            ("one dot two dot nine hundred ninety nine", "1.2.999"),
-            ("one dot two dot one hundred", "1.2.100"),
-            ("one dot two dot one hundred and check it", "1.2.100 and check it"),
-            ("one dot two dot zero zero six", "1.2.006"),
-            ("01 dot 002 dot 12345678901234567890", "01.002.12345678901234567890"),
-            ("zero dot oh dot seven dot four", "0.0.7.4"),
-            ("one\tdot\ttwo\tdot\tsix", "1.2.6"),
-            ("one\u{a0}dot\u{a0}two\u{a0}dot\u{a0}six", "1.2.6"),
-            ("👩🏽‍💻 Use one dot two dot six and one dot three dot zero. Café!", "👩🏽‍💻 Use 1.2.6 and 1.3.0. Café!"),
-            ("one dot two dot six\nzero dot ten dot two", "1.2.6\n0.10.2"),
-        ]
-        let unchanged = [
-            "", "Use version 1.2.6.", "One. Two. Six.", "one point two point six",
-            "one dot two", "version one dot two", "one dot two dot sixteenth",
-            "someone dot two dot six", "one dot two dot six hundred thousand",
-            "one thousand dot two dot three", "one dot two dot six million",
-            "one dot two dot sixty twenty", "twenty thirteen dot one dot two",
-            "one hundred zero dot two dot three", "one dot two. Six people arrived.",
-            "one dot two dot\nsix", "one dot two.\nSix people arrived.",
-            "https://one dot two dot six", "team@one dot two dot six",
-            "one dot two dot six@example.com", "build_one dot two dot six",
-            "one dot two dot six dot beta", "alpha dot one dot two dot six",
-            "one dot two dot six.com", "minus one dot two dot six",
-            "negative one dot two dot six", "one dot two dot six-beta",
-            "one dot two dot six-eight", "one dot two dot twenty--one",
-            "one dot two dot twenty - one",
-            "éone dot two dot six", "one dot two dot sixé",
-            "one day, two meetings, six people. Join the dots.",
-        ]
-        for (input, expected) in versions + unchanged.map({ ($0, $0) }) {
-            let actual = VersionNumberFormatter.format(input)
-            try check(actual == expected, "Version formatting: \(String(reflecting: input)) → \(String(reflecting: actual)); expected \(String(reflecting: expected))")
-            try check(VersionNumberFormatter.format(actual) == actual, "Version formatting must be idempotent")
-        }
-        print("PASS: \(versions.count + unchanged.count) version-formatting cases, preserved surrounding text, and idempotence")
+        try VersionFormattingChecks.run()
 
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }

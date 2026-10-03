@@ -62,7 +62,7 @@ Each release includes a versioned DMG and an identical `On-Air.dmg` for the webs
 Tools/test.sh
 ```
 
-Runs 33 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes final-only pasting, formatted versions in live/retry/Copy results, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 34 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes final-only pasting, formatted versions in live/retry/Copy results, preservation of ambiguous phrases and surrounding text, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 

@@ -8,5 +8,5 @@ xcrun swiftc -swift-version 6 -parse-as-library \
     OnAir/Transcription/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
     OnAir/Transcription/OpenAITranscriber.swift OnAir/Paste/TranscriptInserter.swift \
     OnAir/Transcription/VersionNumberFormatter.swift \
-    Tools/CoreChecks.swift -o .build/core-tests/checks
+    Tools/VersionFormattingChecks.swift Tools/CoreChecks.swift -o .build/core-tests/checks
 .build/core-tests/checks

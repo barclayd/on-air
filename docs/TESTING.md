@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **33 application E2E tests and one visual regression test comparing twelve images**, preceded by credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **34 application E2E tests and one visual regression test comparing twelve images**, preceded by credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -75,7 +75,9 @@ Before shipping input or window-management changes, use the normal signed app in
 
 Clipboard failure checks cover a payload exceeding the 32 MiB snapshot limit and an advertised representation whose provider returns no data. Both must leave the private pasteboard intact. Direct-input checks reconstruct a long transcript from the generated Unicode events, including emoji and combining characters, and reject newlines, control characters, and oversized graphemes before any events are created for delivery. These tests never post the events; they verify framing and preservation, not whether another app accepts synthetic Unicode input. Exercise that fallback manually in each supported destination before claiming compatibility.
 
-Version-formatting core checks cover 51 cases plus idempotence: case/spacing variants, mixed digits and words, tens/hundreds, leading zeroes, multiple versions, Unicode surroundings, unchanged prose and already formatted versions, and rejection of incomplete/unsupported sequences, sentence boundaries, URLs, ranges, and identifier fragments. Three app-process tests verify the production formatter runs after completion on the live, retry, and Copy paths.
+Version-formatting core checks in `Tools/VersionFormattingChecks.swift` cover 131 cases. Every fixture compares exact UTF-8 bytes and verifies idempotence. Positive examples cover case/spacing variants, mixed digits and words, tens/hundreds, leading zeroes, multiple versions, punctuation, and independent nearby numbers. Negative examples cover ordinary prose, two-component phrases, existing numeric versions, fractions, unsupported scales, currency/percent quantities, malformed dotted sequences, Unicode ranges/signs, URLs, paths, identifiers, combining characters, and eight kinds of line break. Four app-process tests verify completion-only formatting on live, retry, and Copy paths, including a mixed paragraph where only two clear versions may change. These checks exercise local formatting, not speech-recognition accuracy.
+
+Run the fast fixtures with `Tools/test-core.sh`. Changes to the fixture file itself trigger the app CI workflow, including when production source is unchanged.
 
 ## Explicit live-API checks
 

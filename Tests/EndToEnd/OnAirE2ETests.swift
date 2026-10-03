@@ -384,6 +384,34 @@ final class OnAirE2ETests: XCTestCase {
         XCTAssertEqual(copied.raw["pendingTranscript"] as? String, "")
     }
 
+    func testVersionFormattingPreservesAmbiguousPhrasesAndSurroundingText() throws {
+        try launch()
+        let transcript = """
+        Use one dot two dot six; keep version one dot two for now.
+        It costs £1.26 for six people on 01.02.2026. Café, e\u{301}, 👩🏽‍💻!
+        Keep one dot two dot six dot beta and one dot two dot six–eight unchanged.
+        The words one dot two dot six and a half are ambiguous.
+        Compare one dot two dot seven with 1.2.8.
+        """
+        let expected = """
+        Use 1.2.6; keep version one dot two for now.
+        It costs £1.26 for six people on 01.02.2026. Café, e\u{301}, 👩🏽‍💻!
+        Keep one dot two dot six dot beta and one dot two dot six–eight unchanged.
+        The words one dot two dot six and a half are ambiguous.
+        Compare 1.2.7 with 1.2.8.
+        """
+        try app.send("transcription", ["delay": 0.1, "text": transcript])
+        try startHold()
+        try app.wait("settled hold") { $0.number("presence") > 0.9 }
+        XCTAssertEqual(app.last?.number("pasteCount"), 0)
+        try app.up()
+        let final = try app.wait("conservatively formatted transcript pasted") { $0.idle && $0.number("pasteCount") == 1 }
+        let pasted = try XCTUnwrap(final.raw["pastedText"] as? String)
+        XCTAssertEqual(Array(pasted.utf8), Array(expected.utf8), "Only the two clear version spans may change")
+        XCTAssertEqual(final.number("transcriptionFinishes"), 1)
+        XCTAssertEqual(final.number("transcriptionRetries"), 0)
+    }
+
     func testRetryFormatsSpokenVersionsWithoutOpeningMicrophone() throws {
         try launch()
         try app.send("transcription", ["delay": 0.1, "fail": true])
