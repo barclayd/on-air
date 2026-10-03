@@ -12,6 +12,7 @@ on:
       - 'Tools/test-core.sh'
       - 'Tools/CoreChecks.swift'
       - 'Tools/VersionFormattingChecks.swift'
+      - 'Tools/SettingsChecks.swift'
       - 'Tools/RenderPreview.swift'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
@@ -27,6 +28,7 @@ on:
       - 'Tools/test-core.sh'
       - 'Tools/CoreChecks.swift'
       - 'Tools/VersionFormattingChecks.swift'
+      - 'Tools/SettingsChecks.swift'
       - 'Tools/RenderPreview.swift'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
@@ -51,7 +53,7 @@ jobs:
           persist-credentials: false
       - name: Test release validation and failure handling
         run: python3 -m unittest discover -s Tools/ReleaseTests -v
-      - name: Check audio, credentials, version formatting, and clipboard preservation
+      - name: Check settings, audio, credentials, formatting, and clipboard preservation
         run: Tools/test-core.sh
       - name: Build universal app and exercise DMG packaging without credentials
         run: python3 Tools/release.py package --tag v0.0.0-alpha.1 --build 1 --unsigned
