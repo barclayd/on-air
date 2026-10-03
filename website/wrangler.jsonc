@@ -2,7 +2,7 @@
 // and Cloudflare serves it without running any Worker code.
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "on-air-website",
+  "name": "on-air",
   "compatibility_date": "2026-10-01",
   "assets": {
     "directory": "./dist"
