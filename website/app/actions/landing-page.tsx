@@ -133,6 +133,12 @@ const dotStyle = css({
   borderRadius: '50%',
   background: 'var(--red)',
   boxShadow: '0 0 10px rgba(255, 74, 58, 0.8)',
+  animation: 'dot-pulse 2.8s ease-in-out infinite',
+  '@keyframes dot-pulse': {
+    '0%, 100%': { boxShadow: '0 0 8px 0 rgba(255, 74, 58, 0.6)' },
+    '50%': { boxShadow: '0 0 14px 2px rgba(255, 74, 58, 0.9)' },
+  },
+  '@media (prefers-reduced-motion: reduce)': { animation: 'none' },
 })
 
 const pillStyle = css({
