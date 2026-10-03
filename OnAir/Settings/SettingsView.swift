@@ -37,7 +37,7 @@ struct SettingsView: View {
                             .accessibilityLabel("Dictation notes")
                             .accessibilityIdentifier("settings.notes")
                         if model.notes.isEmpty {
-                            Text("I work at AnyVan. Use British spelling. Write HubSpot, not Hubspot.")
+                            Text("Use British spelling. Write HubSpot, not Hubspot.")
                                 .font(.system(size: 14)).lineSpacing(5)
                                 .foregroundStyle(SettingsPalette.secondary.opacity(0.65))
                                 .padding(.horizontal, 14).padding(.vertical, 12)
