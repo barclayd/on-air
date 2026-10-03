@@ -44,6 +44,7 @@ These are native macOS permission dialogs; a custom onboarding flow is deferred.
 - Reduce Motion uses a quiet, static glow and line with colour/opacity transitions.
 - Only a completed transcript is pasted. If the original field or its selection has changed, use **Copy transcript** in the menu. Secure fields and unrecognised accessibility targets also use this fallback.
 - Clipboard items and formats are restored after ⌘V; a newer user copy is never overwritten.
+- If the clipboard cannot be fully preserved, ordinary single-line dictation uses Unicode keyboard input without changing the clipboard. Multiline/control text uses **Copy transcript** instead. The same destination and modifier checks apply; compatibility of direct input depends on the receiving app.
 - On API failure or a 20-second finalisation timeout, one failed clip stays in memory for up to five minutes for **Retry transcription**. Retry never activates the microphone. A new hold, success, sleep/lock, or quitting clears it. Uncopied results also expire after five minutes.
 - Capture retention is bounded to eight minutes per hold; ordinary dictations are expected to be 10–60 seconds. The socket stays warm while the app is running; the microphone does not.
 
