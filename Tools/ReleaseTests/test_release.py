@@ -41,8 +41,13 @@ class ReleaseTests(unittest.TestCase):
             app = Path(folder)
             (app / 'Contents').mkdir()
             info = {'CFBundleIdentifier': 'com.danbarclay.onair', 'CFBundleShortVersionString': '1.2.3',
-                    'CFBundleVersion': '2', 'LSUIElement': True}
+                    'CFBundleVersion': '2', 'LSUIElement': True,
+                    'CFBundleIconName': 'AppIcon', 'CFBundleIconFile': 'AppIcon'}
             (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+            resources = app / 'Contents/Resources'
+            resources.mkdir()
+            (resources / 'AppIcon.icns').write_bytes(b'icns-fixture')
+            (resources / 'Assets.car').write_bytes(b'catalog-fixture')
             expected = release.metadata('v1.2.3', '2')
             for architectures, symbols, accepted in [(b'arm64 x86_64', b'production', True),
                                                        (b'arm64', b'production', False),
@@ -56,6 +61,31 @@ class ReleaseTests(unittest.TestCase):
                             release.verify_app(app, expected)
             with self.assertRaisesRegex(release.ReleaseError, 'identity/version'):
                 release.verify_app(app, release.metadata('v9.9.9', '2'))
+
+    def test_archive_validation_rejects_missing_or_invalid_icon(self):
+        cases = ['missing-name', 'wrong-file', 'missing-icns', 'empty-icns', 'invalid-icns', 'missing-catalog', 'empty-catalog']
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as folder, patch.object(release, 'run') as run:
+                app = Path(folder)
+                resources = app / 'Contents/Resources'
+                resources.mkdir(parents=True)
+                info = {'CFBundleIdentifier': 'com.danbarclay.onair', 'CFBundleShortVersionString': '1.0.1',
+                        'CFBundleVersion': '5', 'LSUIElement': True,
+                        'CFBundleIconName': 'AppIcon', 'CFBundleIconFile': 'AppIcon'}
+                icon, catalog = resources / 'AppIcon.icns', resources / 'Assets.car'
+                icon.write_bytes(b'icns-fixture')
+                catalog.write_bytes(b'catalog-fixture')
+                if case == 'missing-name': del info['CFBundleIconName']
+                elif case == 'wrong-file': info['CFBundleIconFile'] = 'Missing'
+                elif case == 'missing-icns': icon.unlink()
+                elif case == 'empty-icns': icon.write_bytes(b'')
+                elif case == 'invalid-icns': icon.write_bytes(b'not-an-icon')
+                elif case == 'missing-catalog': catalog.unlink()
+                elif case == 'empty-catalog': catalog.write_bytes(b'')
+                (app / 'Contents/Info.plist').write_bytes(plistlib.dumps(info))
+                with self.assertRaisesRegex(release.ReleaseError, 'app icon'):
+                    release.verify_app(app, release.metadata('v1.0.1', '5'))
+                run.assert_not_called()
 
     def test_identity_rejects_development_wrong_team_and_ambiguity(self):
         identity = 'A' * 40

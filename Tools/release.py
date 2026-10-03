@@ -137,6 +137,14 @@ def verify_app(app, expected):
               'CFBundleVersion': expected['build'], 'LSUIElement': True}
     if any(info.get(k) != v for k, v in checks.items()):
         raise ReleaseError('Archived app identity/version does not match this release.')
+    resources = app / 'Contents/Resources'
+    icon = resources / 'AppIcon.icns'
+    catalog = resources / 'Assets.car'
+    if (info.get('CFBundleIconName') != 'AppIcon' or
+            info.get('CFBundleIconFile') not in ('AppIcon', 'AppIcon.icns') or
+            not icon.is_file() or icon.stat().st_size <= 8 or icon.read_bytes()[:4] != b'icns' or
+            not catalog.is_file() or catalog.stat().st_size == 0):
+        raise ReleaseError('Archived app icon metadata or compiled icon resources are missing or invalid.')
     binary = app / 'Contents/MacOS/On Air'
     architectures = run('Verify both Mac architectures', ['xcrun', 'lipo', '-archs', binary]).stdout.decode().split()
     if set(architectures) != {'arm64', 'x86_64'}:

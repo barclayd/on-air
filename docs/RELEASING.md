@@ -2,7 +2,7 @@
 
 The repository has two GitHub Actions workflows:
 
-- **Build and package checks** runs on pull requests and pushes to main that change the app, Xcode project, app tests, packaging/test tools, or either app workflow. Website, documentation, and unrelated GitHub metadata changes skip this workflow. It can also be run manually. It runs ten release tests, the audio/credential/clipboard core checks, builds both Mac architectures, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
+- **Build and package checks** runs on pull requests and pushes to main that change the app, Xcode project, app tests, packaging/test tools, or either app workflow. Website, documentation, and unrelated GitHub metadata changes skip this workflow. It can also be run manually. It runs eleven release tests, the audio/credential/clipboard core checks, builds both Mac architectures, verifies the compiled app icon is included, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
 - **Release On Air** runs on version tags or manually. It signs with Developer ID, notarizes and staples both the app and its DMG, checks Gatekeeper, and calculates the final checksum. Publishing uses a separate job with repository write permission and no Apple credentials.
 
 Both use the stable `macos-26` runner and Xcode 26.6. Action versions are pinned to reviewed commit hashes. The desktop E2E suite and macOS 27 visual baselines remain a separate `Tools/test.sh` check on a logged-in Mac; the hosted checks do not claim to replace those or physical microphone testing.
