@@ -374,9 +374,7 @@ function Deck() {
         </div>
         <div mix={trackpadStyle} />
         <div data-part="deck-glow" mix={deckGlowStyle} />
-        <div mix={lipStyle}>
-          <div mix={thumbScoopStyle} />
-        </div>
+        <div mix={thumbScoopStyle} />
       </div>
     </div>
   )
@@ -541,6 +539,8 @@ const deckWrapStyle = css({
   aspectRatio: '1 / 0.37',
   perspective: '5000px',
   perspectiveOrigin: '50% 0%',
+  // Here rather than on the deck, so the deck's own shadow can use cqw too.
+  containerType: 'inline-size',
 })
 
 const deckStyle = css({
@@ -551,11 +551,12 @@ const deckStyle = css({
   aspectRatio: '1.45 / 1',
   transformOrigin: '50% 0',
   transform: 'rotateX(64deg)',
-  transformStyle: 'preserve-3d',
-  containerType: 'inline-size',
   borderRadius: '8px 8px 26px 26px',
   background: 'linear-gradient(180deg, #4a4a4e 0%, #3d3d41 35%, #333337 100%)',
-  boxShadow: 'inset 0 2px 0 rgba(255, 255, 255, 0.12), inset 0 -4px 10px rgba(0, 0, 0, 0.35)',
+  // The last two shadows are the front edge: a copy of the deck's outline pushed
+  // down, so the thickness wraps the rounded corners exactly.
+  boxShadow:
+    'inset 0 2px 0 rgba(255, 255, 255, 0.12), inset 0 -4px 10px rgba(0, 0, 0, 0.35), 0 0.3cqw 0 #2c2c2f, 0 1.4cqw 0 #161618',
 })
 
 const keyboardStyle = css({
@@ -627,25 +628,13 @@ const deckGlowStyle = css({
   pointerEvents: 'none',
 })
 
-// The front edge, folded back to face the viewer.
-const lipStyle = css({
-  position: 'absolute',
-  left: '1.6cqw',
-  right: '1.6cqw',
-  top: '100%',
-  height: '2.2cqw',
-  transformOrigin: '50% 0',
-  transform: 'rotateX(-64deg)',
-  borderRadius: '0 0 18px 18px',
-  background: 'linear-gradient(180deg, #2c2c2f, #141416)',
-})
-
+// Notched into the top of the front edge.
 const thumbScoopStyle = css({
   position: 'absolute',
   left: '43cqw',
   width: '14cqw',
-  top: 0,
-  height: '0.8cqw',
+  top: '100%',
+  height: '0.7cqw',
   borderRadius: '0 0 1cqw 1cqw',
   background: '#0d0d0e',
 })
