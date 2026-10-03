@@ -68,4 +68,4 @@ xcrun swiftc -parse-as-library \
 .build/render-preview .build/previews
 ```
 
-See [benchmark results](docs/BENCHMARKS.md), [testing details](docs/TESTING.md), and [product decisions](docs/DECISIONS.md).
+See [benchmark results](docs/BENCHMARKS.md), [testing details](docs/TESTING.md), [product decisions](docs/DECISIONS.md), and the [distribution recommendation](docs/DISTRIBUTION.md).
