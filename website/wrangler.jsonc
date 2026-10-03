@@ -10,5 +10,11 @@
   },
   "assets": {
     "directory": "./dist"
+  },
+  // Mirrors the dashboard's preview variable; Wrangler fails preview builds when they differ.
+  "previews": {
+    "vars": {
+      "BUN_VERSION": "1.4.0"
+    }
   }
 }
