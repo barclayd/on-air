@@ -62,7 +62,7 @@ export const ScrollStory = clientEntry(import.meta.url, function ScrollStory(han
     const hero = part('hero')
     const screen = part('screen')
     const spill = part('spill')
-    const key = part('key')
+    const deckGlow = part('deck-glow')
     const keyTop = part('key-top')
     const keyGlow = part('key-glow')
     const keyLabel = part('key-label')
@@ -103,10 +103,9 @@ export const ScrollStory = clientEntry(import.meta.url, function ScrollStory(han
       })
 
       const keyDown = R(0.18, 0.2) * (1 - R(0.553, 0.562))
-      key.style.opacity = `${R(0.1, 0.14) * (1 - R(0.6, 0.65))}`
-      keyTop.style.transform = `translateY(${-6 + 6 * keyDown}px) scale(${1 - 0.03 * keyDown})`
-      keyTop.style.boxShadow = `inset 0 1px 0 rgba(255,255,255,${0.08 - 0.05 * keyDown}),0 ${6 - 6 * keyDown}px 0 #0a0a0a,0 ${8 - 6 * keyDown}px ${14 - 10 * keyDown}px rgba(0,0,0,0.5)`
-      keyTop.style.background = keyDown > 0.5 ? '#151516' : '#1d1d1f'
+      keyTop.style.transform = `translateY(${0.22 * keyDown}cqw) scale(${1 - 0.04 * keyDown})`
+      keyTop.style.boxShadow = `inset 0 0.08cqw 0 rgba(255,255,255,${0.07 - 0.05 * keyDown}),0 ${0.18 * (1 - keyDown)}cqw 0 #050506`
+      keyTop.style.background = keyDown > 0.5 ? '#060607' : '#0c0c0d'
       keyGlow.style.opacity = `${keyDown * (0.75 + 0.25 * (0.5 + 0.5 * Math.sin(t * 1.7)))}`
       keyLabel.style.opacity = `${keyDown}`
 
@@ -126,6 +125,8 @@ export const ScrollStory = clientEntry(import.meta.url, function ScrollStory(han
       const [r, g, b] = tint(mix)
       spill.style.background = `radial-gradient(closest-side,rgba(${r},${g},${b},0.55),rgba(${r},${g},${b},0))`
       spill.style.opacity = `${alpha * (0.55 + 0.25 * (0.5 + 0.5 * Math.sin(t * 1.7)) + 0.3 * level) * (1 - 0.5 * mix)}`
+      deckGlow.style.background = `linear-gradient(180deg,rgba(${r},${g},${b},0.45),rgba(${r},${g},${b},0.12) 30%,rgba(${r},${g},${b},0) 60%)`
+      deckGlow.style.opacity = `${alpha * (0.6 + 0.2 * (0.5 + 0.5 * Math.sin(t * 1.7)) + 0.3 * level) * (1 - 0.5 * mix)}`
 
       drawLight(
         glow,
@@ -194,7 +195,7 @@ export const ScrollStory = clientEntry(import.meta.url, function ScrollStory(han
           mix={css({
             position: 'relative',
             width: 'min(900px, 88vw)',
-            height: '120px',
+            height: 'clamp(76px, 13vh, 120px)',
             flexShrink: 0,
           })}
         >
@@ -206,87 +207,245 @@ export const ScrollStory = clientEntry(import.meta.url, function ScrollStory(han
           ))}
         </div>
 
-        <div data-part="screen" mix={screenStyle}>
-          <div data-part="spill" mix={spillStyle} />
-          <div mix={[bezel, css({ position: 'absolute', inset: 0, zIndex: 1 })]}>
-            <NotesScreen text={WORDS.slice(0, words).join(' ')} blur="4cqw" />
+        <div data-part="screen" mix={laptopStyle}>
+          <div mix={css({ position: 'relative', width: '100%', aspectRatio: '16 / 10' })}>
+            <div data-part="spill" mix={spillStyle} />
+            <div mix={[bezel, lidStyle]}>
+              <NotesScreen text={WORDS.slice(0, words).join(' ')} blur="4cqw" />
+            </div>
           </div>
-          <FnKey />
+          <div mix={hingeStyle} />
+          <Deck />
         </div>
 
-        <div data-part="tabs" mix={tabsStyle}>
-          {STEPS.map(({ tab }, i) => (
-            <button
-              key={tab}
-              type="button"
-              aria-current={step === i ? 'step' : undefined}
-              mix={[tabStyle, on('click', () => scrollToStep(i))]}
-            >
-              {tab}
-            </button>
-          ))}
+        {/* Above the screen's light spill, which would otherwise tint the tabs. */}
+        <div mix={css({ position: 'relative', zIndex: 1, flexShrink: 0 })}>
+          <div data-part="key-label" mix={keyLabelStyle}>
+            <span
+              mix={css({
+                width: '7px',
+                height: '7px',
+                borderRadius: '50%',
+                background: 'var(--red)',
+                boxShadow: '0 0 8px rgba(255, 74, 58, 0.9)',
+              })}
+            />
+            Holding fn
+          </div>
+          <div data-part="tabs" mix={tabsStyle}>
+            {STEPS.map(({ tab }, i) => (
+              <button
+                key={tab}
+                type="button"
+                aria-current={step === i ? 'step' : undefined}
+                mix={[tabStyle, on('click', () => scrollToStep(i))]}
+              >
+                {tab}
+              </button>
+            ))}
+          </div>
         </div>
       </div>
     </section>
   )
 })
 
-function FnKey() {
+interface Key {
+  label: string
+  /** Shifted symbol or glyph, drawn above the label. */
+  top: string
+  grow: number
+  justify: string
+  align: string
+  size: string
+}
+
+const key = (
+  label: string,
+  { top = '', grow = 1, justify = 'center', align = 'center', size = '1.5cqw' } = {},
+): Key => ({ label, top, grow, justify, align, size })
+const mod = (label: string, top: string, grow: number, right = false) =>
+  key(label, {
+    top,
+    grow,
+    justify: 'space-between',
+    align: right ? 'flex-end' : 'flex-start',
+    size: '0.95cqw',
+  })
+const sym = (label: string, top: string) => key(label, { top, size: '1.1cqw' })
+const letters = (row: string) => [...row].map((c) => key(c))
+
+// A MacBook keyboard. 'fn' and 'arrows' are drawn specially.
+const ROWS: { height: string; keys: (Key | 'fn' | 'arrows')[] }[] = [
+  {
+    height: '2.9cqw',
+    keys: [
+      key('esc', { grow: 1.5, justify: 'flex-end', align: 'flex-start', size: '0.85cqw' }),
+      ...Array.from({ length: 12 }, (_, i) => key(`F${i + 1}`, { size: '0.75cqw' })),
+      key(''),
+    ],
+  },
+  {
+    height: '5.3cqw',
+    keys: [
+      sym('`', '~'),
+      ...[...'1!2@3#4$5%6^7&8*9(0)-_=+'.matchAll(/../g)].map(([p]) => sym(p[0], p[1])),
+      mod('delete', '', 1.5, true),
+    ],
+  },
+  {
+    height: '5.3cqw',
+    keys: [
+      mod('tab', '⇥', 1.5),
+      ...letters('QWERTYUIOP'),
+      sym('[', '{'),
+      sym(']', '}'),
+      sym('\\', '|'),
+    ],
+  },
+  {
+    height: '5.3cqw',
+    keys: [
+      mod('caps lock', '•', 1.8),
+      ...letters('ASDFGHJKL'),
+      sym(';', ':'),
+      sym("'", '"'),
+      mod('return', '↩', 1.8, true),
+    ],
+  },
+  {
+    height: '5.3cqw',
+    keys: [
+      mod('shift', '⇧', 2.3),
+      ...letters('ZXCVBNM'),
+      sym(',', '<'),
+      sym('.', '>'),
+      sym('/', '?'),
+      mod('shift', '⇧', 2.3, true),
+    ],
+  },
+  {
+    height: '5.3cqw',
+    keys: [
+      'fn',
+      mod('control', '⌃', 1),
+      mod('option', '⌥', 1),
+      mod('command', '⌘', 1.25),
+      key('', { grow: 5 }),
+      mod('command', '⌘', 1.25, true),
+      mod('option', '⌥', 1, true),
+      'arrows',
+    ],
+  },
+]
+
+// The keyboard half of the laptop, tilted back in 3D. Sized in container query
+// units so it scales with the screen.
+function Deck() {
   return () => (
-    <div data-part="key" aria-hidden="true" mix={keyStyle}>
-      <div data-part="key-glow" mix={keyGlowStyle} />
-      <div
-        mix={css({
-          position: 'relative',
-          width: '100%',
-          height: '100%',
-          borderRadius: '16px',
-          background: '#0c0c0c',
-        })}
-      >
-        <div data-part="key-top" mix={keyTopStyle}>
-          <span
-            mix={css({
-              position: 'absolute',
-              right: '14px',
-              top: '12px',
-              fontSize: '21px',
-              fontWeight: 500,
-              color: '#f2f2f2',
-              letterSpacing: '0.01em',
-            })}
-          >
-            fn
-          </span>
-          <svg
-            aria-hidden="true"
-            width="24"
-            height="24"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#f2f2f2"
-            stroke-width="1.4"
-            mix={css({ position: 'absolute', left: '14px', bottom: '14px' })}
-          >
-            <circle cx="12" cy="12" r="9.5" />
-            <ellipse cx="12" cy="12" rx="4.2" ry="9.5" />
-            <line x1="12" y1="2.5" x2="12" y2="21.5" />
-            <line x1="2.5" y1="12" x2="21.5" y2="12" />
-            <path d="M4.2 7h15.6M4.2 17h15.6" />
-          </svg>
+    <div aria-hidden="true" mix={deckWrapStyle}>
+      <div mix={deckStyle}>
+        <div mix={keyboardStyle}>
+          {ROWS.map(({ height, keys }, row) => (
+            <div key={row} mix={rowStyle} style={{ height }}>
+              {keys.map((k, i) =>
+                k === 'fn' ? (
+                  fnKey()
+                ) : k === 'arrows' ? (
+                  arrows()
+                ) : (
+                  <div
+                    key={i}
+                    mix={[keyCap, labelledKeyStyle]}
+                    style={{
+                      flex: `${k.grow} 1 0`,
+                      justifyContent: k.justify,
+                      alignItems: k.align,
+                      fontSize: k.size,
+                    }}
+                  >
+                    <span>{k.top}</span>
+                    <span>{k.label}</span>
+                  </div>
+                ),
+              )}
+            </div>
+          ))}
+        </div>
+        <div mix={trackpadStyle} />
+        <div data-part="deck-glow" mix={deckGlowStyle} />
+        <div mix={lipStyle}>
+          <div mix={thumbScoopStyle} />
         </div>
       </div>
-      <div data-part="key-label" mix={keyLabelStyle}>
+    </div>
+  )
+}
+
+function fnKey() {
+  return (
+    <div key="fn" mix={css({ flex: '1 1 0', minWidth: 0, position: 'relative' })}>
+      <div data-part="key-glow" mix={keyGlowStyle} />
+      <div data-part="key-top" mix={[keyCap, css({ position: 'absolute', inset: 0 })]}>
         <span
+          mix={css({ position: 'absolute', right: '0.6cqw', top: '0.4cqw', fontSize: '1.05cqw' })}
+        >
+          fn
+        </span>
+        <svg
+          aria-hidden="true"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#cfcfd2"
+          stroke-width="1.6"
           mix={css({
-            width: '7px',
-            height: '7px',
-            borderRadius: '50%',
-            background: 'var(--red)',
-            boxShadow: '0 0 8px rgba(255, 74, 58, 0.9)',
+            position: 'absolute',
+            left: '0.6cqw',
+            bottom: '0.5cqw',
+            width: '1.5cqw',
+            height: '1.5cqw',
           })}
-        />
-        Holding
+        >
+          <circle cx="12" cy="12" r="9.5" />
+          <ellipse cx="12" cy="12" rx="4.2" ry="9.5" />
+          <line x1="2.5" y1="12" x2="21.5" y2="12" />
+          <path d="M4.2 7h15.6M4.2 17h15.6" />
+        </svg>
+      </div>
+    </div>
+  )
+}
+
+function arrows() {
+  return (
+    <div
+      key="arrows"
+      mix={css({
+        flex: '3 1 0',
+        minWidth: 0,
+        display: 'flex',
+        gap: '0.45cqw',
+        alignItems: 'flex-end',
+        fontSize: '0.8cqw',
+      })}
+    >
+      <div mix={[keyCap, arrowStyle]} style={{ height: '48%' }}>
+        ◀
+      </div>
+      <div
+        mix={css({
+          flex: '1 1 0',
+          height: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0.3cqw',
+        })}
+      >
+        <div mix={[keyCap, arrowStyle]}>▲</div>
+        <div mix={[keyCap, arrowStyle]}>▼</div>
+      </div>
+      <div mix={[keyCap, arrowStyle]} style={{ height: '48%' }}>
+        ▶
       </div>
     </div>
   )
@@ -301,8 +460,8 @@ const stageStyle = css({
   flexDirection: 'column',
   alignItems: 'center',
   justifyContent: 'center',
-  gap: '26px',
-  paddingTop: '30px',
+  gap: 'clamp(10px, 2vh, 26px)',
+  paddingTop: '52px',
   boxSizing: 'border-box',
 })
 
@@ -333,13 +492,16 @@ const captionStyle = css({
   opacity: 0,
 })
 
-const screenStyle = css({
+const laptopStyle = css({
   position: 'relative',
-  width: 'min(1040px, 86vw, calc((100vh - 290px) * 1.6))',
-  aspectRatio: '16 / 10',
+  width: 'min(1040px, 82vw, calc(80vh - 100px))',
   flexShrink: 0,
   isolation: 'isolate',
+  display: 'flex',
+  flexDirection: 'column',
+  alignItems: 'center',
   transform: 'translateY(10vh) scale(0.84)',
+  transformOrigin: '50% 40%',
   willChange: 'transform',
 })
 
@@ -355,51 +517,145 @@ const spillStyle = css({
   pointerEvents: 'none',
 })
 
-const keyStyle = css({
+const lidStyle = css({
   position: 'absolute',
-  right: '-40px',
-  bottom: '14%',
-  width: '124px',
-  height: '124px',
-  padding: '10px',
-  boxSizing: 'border-box',
-  borderRadius: '24px',
-  background: '#d9d6d0',
-  boxShadow: '0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-  opacity: 0,
+  inset: 0,
+  zIndex: 1,
+  borderRadius: '22px 22px 6px 6px',
+})
+
+const hingeStyle = css({
+  position: 'relative',
   zIndex: 2,
-  '@media (max-width: 640px)': {
-    right: '-8px',
-    transform: 'scale(0.6)',
-    transformOrigin: 'bottom right',
-  },
+  width: '96%',
+  aspectRatio: '100 / 1.2',
+  marginTop: '-1px',
+  borderRadius: '0 0 5px 5px',
+  background: 'linear-gradient(180deg, #0c0c0e 0%, #2c2c2f 55%, #1a1a1c 100%)',
+})
+
+const deckWrapStyle = css({
+  position: 'relative',
+  zIndex: 1,
+  width: '100%',
+  aspectRatio: '1 / 0.37',
+  perspective: '5000px',
+  perspectiveOrigin: '50% 0%',
+})
+
+const deckStyle = css({
+  position: 'absolute',
+  left: 0,
+  top: 0,
+  width: '100%',
+  aspectRatio: '1.45 / 1',
+  transformOrigin: '50% 0',
+  transform: 'rotateX(64deg)',
+  transformStyle: 'preserve-3d',
+  containerType: 'inline-size',
+  borderRadius: '8px 8px 26px 26px',
+  background: 'linear-gradient(180deg, #4a4a4e 0%, #3d3d41 35%, #333337 100%)',
+  boxShadow: 'inset 0 2px 0 rgba(255, 255, 255, 0.12), inset 0 -4px 10px rgba(0, 0, 0, 0.35)',
+})
+
+const keyboardStyle = css({
+  position: 'absolute',
+  left: '7cqw',
+  right: '7cqw',
+  top: '4.5cqw',
+  padding: '0.5cqw',
+  borderRadius: '1cqw',
+  background: '#161618',
+  boxShadow: 'inset 0 0.15cqw 0.5cqw rgba(0, 0, 0, 0.7)',
+  display: 'flex',
+  flexDirection: 'column',
+  gap: '0.45cqw',
+})
+
+const rowStyle = css({ display: 'flex', gap: '0.45cqw' })
+
+const keyCap = css({
+  borderRadius: '0.55cqw',
+  background: '#0c0c0d',
+  boxShadow: 'inset 0 0.08cqw 0 rgba(255, 255, 255, 0.07), 0 0.18cqw 0 #050506',
+  boxSizing: 'border-box',
+  color: '#cfcfd2',
+})
+
+const labelledKeyStyle = css({
+  minWidth: 0,
+  display: 'flex',
+  flexDirection: 'column',
+  padding: '0.4cqw 0.6cqw',
+  lineHeight: 1.15,
+})
+
+const arrowStyle = css({
+  flex: '1 1 0',
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 })
 
 const keyGlowStyle = css({
   position: 'absolute',
-  inset: '10px',
-  borderRadius: '16px',
-  boxShadow: '0 0 0 2px rgba(255, 74, 58, 0.9), 0 0 28px 6px rgba(255, 74, 58, 0.55)',
+  inset: 0,
+  borderRadius: '0.55cqw',
+  boxShadow: '0 0 0 0.25cqw rgba(255, 80, 62, 0.95), 0 0 3cqw 0.8cqw rgba(255, 74, 58, 0.6)',
   opacity: 0,
   pointerEvents: 'none',
 })
 
-const keyTopStyle = css({
+const trackpadStyle = css({
+  position: 'absolute',
+  left: '27cqw',
+  top: '41cqw',
+  width: '46cqw',
+  height: '25cqw',
+  borderRadius: '1.6cqw',
+  background: 'linear-gradient(180deg, #404044, #38383c)',
+  boxShadow: 'inset 0 0 0 0.12cqw rgba(0, 0, 0, 0.35), inset 0 0.15cqw 0 rgba(255, 255, 255, 0.06)',
+})
+
+// The light spilling down onto the keyboard.
+const deckGlowStyle = css({
   position: 'absolute',
   inset: 0,
-  borderRadius: '16px',
-  background: '#1d1d1f',
-  boxShadow:
-    'inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 6px 0 #0a0a0a, 0 8px 14px rgba(0, 0, 0, 0.5)',
-  transform: 'translateY(-6px)',
+  borderRadius: 'inherit',
+  mixBlendMode: 'screen',
+  opacity: 0,
+  pointerEvents: 'none',
+})
+
+// The front edge, folded back to face the viewer.
+const lipStyle = css({
+  position: 'absolute',
+  left: '1.6cqw',
+  right: '1.6cqw',
+  top: '100%',
+  height: '2.2cqw',
+  transformOrigin: '50% 0',
+  transform: 'rotateX(-64deg)',
+  borderRadius: '0 0 18px 18px',
+  background: 'linear-gradient(180deg, #2c2c2f, #141416)',
+})
+
+const thumbScoopStyle = css({
+  position: 'absolute',
+  left: '43cqw',
+  width: '14cqw',
+  top: 0,
+  height: '0.8cqw',
+  borderRadius: '0 0 1cqw 1cqw',
+  background: '#0d0d0e',
 })
 
 const keyLabelStyle = css({
   position: 'absolute',
-  left: '50%',
-  bottom: '100%',
-  marginBottom: '14px',
-  transform: 'translateX(-50%)',
+  right: '100%',
+  top: '50%',
+  marginRight: '16px',
+  transform: 'translateY(-50%)',
   display: 'flex',
   alignItems: 'center',
   gap: '8px',
@@ -407,19 +663,17 @@ const keyLabelStyle = css({
   fontSize: '13px',
   fontWeight: 500,
   opacity: 0,
+  // No room beside the tabs on a phone; the glowing key says it anyway.
+  '@media (max-width: 640px)': { display: 'none' },
 })
 
 const tabsStyle = css({
-  // Above the screen's light spill, which would otherwise tint the tabs.
-  position: 'relative',
-  zIndex: 1,
   display: 'flex',
   gap: '6px',
   padding: '5px',
   borderRadius: '999px',
   background: 'rgba(255, 255, 255, 0.06)',
   border: '1px solid rgba(255, 255, 255, 0.06)',
-  flexShrink: 0,
   opacity: 0,
 })
 

@@ -67,7 +67,8 @@ const screenStyle = css({
   position: 'relative',
   width: '100%',
   height: '100%',
-  borderRadius: '12px',
+  // The demo squares off the bottom corners where the screen meets the lid's chin.
+  borderRadius: 'var(--screen-radius, 12px)',
   overflow: 'hidden',
   background: '#1a1918',
   color: '#e9e6e2',

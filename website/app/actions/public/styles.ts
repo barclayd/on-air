@@ -19,7 +19,7 @@ export const lede = css({
 export const bezel = css({
   padding: '10px',
   background: '#050505',
-  border: '1px solid #2b2927',
+  border: '1px solid #3a3a3d',
   borderRadius: '22px',
   boxShadow: '0 50px 120px rgba(0, 0, 0, 0.6)',
   boxSizing: 'border-box',
