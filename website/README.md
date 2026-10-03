@@ -2,6 +2,8 @@
 
 Landing page for On Air, built with Remix 3, TypeScript, Biome and Bun. It's separate from the macOS app.
 
+Download for Mac links directly to [the latest stable DMG on GitHub](https://github.com/barclayd/on-air/releases/latest/download/On-Air.dmg). The release pipeline attaches that fixed filename to every release, so new stable versions need no website redeploy. The link starts working after the first stable release is published; prereleases remain on their own GitHub release pages. Website-only changes skip the Mac app's build workflow.
+
 ## Commands
 
 ```sh

@@ -2,10 +2,30 @@
 
 The repository has two GitHub Actions workflows:
 
-- **Build and package checks** runs on pull requests and main. It runs nine release tests, the audio/credential/clipboard core checks, builds both Mac architectures, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
+- **Build and package checks** runs on pull requests and pushes to main that change the app, Xcode project, app tests, packaging/test tools, or either app workflow. Website, documentation, and unrelated GitHub metadata changes skip this workflow. It can also be run manually. It runs ten release tests, the audio/credential/clipboard core checks, builds both Mac architectures, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
 - **Release On Air** runs on version tags or manually. It signs with Developer ID, notarizes and staples both the app and its DMG, checks Gatekeeper, and calculates the final checksum. Publishing uses a separate job with repository write permission and no Apple credentials.
 
 Both use the stable `macos-26` runner and Xcode 26.6. Action versions are pinned to reviewed commit hashes. The desktop E2E suite and macOS 27 visual baselines remain a separate `Tools/test.sh` check on a logged-in Mac; the hosted checks do not claim to replace those or physical microphone testing.
+
+The automatic path filters live in `.github/workflows/ci.yml`; keep the pull-request and main-push lists in sync when adding app build inputs. Explicit version tags and manual runs remain deliberate build requests, regardless of changed paths. If branch protection is added, do not require this path-filtered workflow for every pull request: GitHub leaves required checks pending when a workflow is skipped by a path filter.
+
+## Download links and release assets
+
+Every signed release includes:
+
+- `On-Air-vMAJOR.MINOR.PATCH.dmg` (including any prerelease suffix), for a particular version.
+- `On-Air.dmg`, an identical copy with a stable filename for the website.
+- A `.sha256` file for each DMG, plus `release.json` recording the version, source commit, build number, both filenames, and their shared checksum.
+
+The stable copy is made after signing, notarization, stapling, and Gatekeeper verification. Publication verifies both copies against the manifest and their own checksum files. Unsigned CI packages instead use `On-Air-unsigned.dmg` and cannot be published by the release workflow.
+
+Use these links:
+
+- [All versions and release notes](https://github.com/barclayd/on-air/releases).
+- [Latest stable download](https://github.com/barclayd/on-air/releases/latest/download/On-Air.dmg), used by the website's Download for Mac button. This link starts working after the first stable release is published and follows future stable releases without a website update.
+- A pinned version, for example `https://github.com/barclayd/on-air/releases/download/v1.0.0/On-Air-v1.0.0.dmg`, after that version is published.
+
+Alpha, beta, and release-candidate downloads appear on their own release pages; they do not replace the latest stable download. Published older versions retain their own downloads. [GitHub's release-link documentation](https://docs.github.com/en/repositories/releasing-projects-on-github/linking-to-releases).
 
 ## One-time Apple and GitHub setup
 
@@ -40,7 +60,7 @@ After this workflow is merged and the credentials are configured:
 
 1. Run `Tools/test.sh` on a logged-in Mac, including the existing app and visual regression tests.
 2. In Actions → **Release On Air** → **Run workflow**, select `main`, enter a proposed version such as `v0.1.0-beta.1`, and leave **publish** unchecked. This builds the selected branch's exact workflow commit. A trusted release-maintainer branch can also be selected to validate pipeline fixes before merging, provided the `release` environment permits that branch. The version tag does not need to exist and is not created.
-3. Download the `notarized-release` artifact. It contains the DMG, its `.sha256`, and `release.json` with the source commit, version, build number, and checksum.
+3. Download the `notarized-release` artifact. It contains both DMG filenames, their `.sha256` files, and `release.json` with the source commit, version, build number, and checksum. These preview artifacts are not public GitHub Releases downloads.
 4. Test a browser-downloaded copy on a fresh Mac: Gatekeeper, copying to Applications, first launch, permissions, fn, microphone, transcription and paste. Test upgrading an older installation too. Check the oldest supported macOS and Intel hardware before advertising that support.
 
 The pipeline validates a real unsigned archive and DMG without credentials in normal CI. A successful Developer ID signing/notarization run still needs the Apple credentials above; simulated failure tests do not prove Apple's service will accept the app.

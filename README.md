@@ -49,7 +49,9 @@ These are native macOS permission dialogs; a custom onboarding flow is deferred.
 
 ## Release pipeline
 
-GitHub Actions checks every pull request with core tests and a universal unsigned DMG build. Version tags trigger Developer ID signing, Apple notarization, and GitHub Releases publication after verification. Manual runs can produce a notarized artifact without publishing. See [release setup and instructions](docs/RELEASING.md) for the Apple credentials and versioning.
+GitHub Actions checks app, project, test, and app-pipeline changes with core tests and a universal unsigned DMG build. Website/docs-only changes skip app CI. Version tags trigger Developer ID signing, Apple notarization, and GitHub Releases publication after verification. Manual runs can produce a notarized artifact without publishing.
+
+Each release includes a versioned DMG and an identical `On-Air.dmg` for the website's [permanent latest-stable download link](https://github.com/barclayd/on-air/releases/latest/download/On-Air.dmg), which starts working after the first stable release is published. Older versions remain on [GitHub Releases](https://github.com/barclayd/on-air/releases). See [release setup and instructions](docs/RELEASING.md) for the Apple credentials and versioning.
 
 ## Regression tests
 

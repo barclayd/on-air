@@ -5,7 +5,7 @@ import { PushToTalk } from './public/push-to-talk.tsx'
 import { ScrollStory } from './public/scroll-story.tsx'
 import { headline, lede } from './public/styles.ts'
 
-const DOWNLOAD_URL = 'https://github.com/barclayd/on-air/releases/latest'
+const DOWNLOAD_URL = 'https://github.com/barclayd/on-air/releases/latest/download/On-Air.dmg'
 
 const FEATURES = [
   { title: 'Free.', body: 'No subscription and no trial.' },

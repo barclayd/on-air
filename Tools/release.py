@@ -11,6 +11,7 @@ import plistlib
 import re
 import secrets
 import shlex
+import shutil
 import signal
 import subprocess
 import sys
@@ -194,7 +195,13 @@ def build_package(tag, build, output, unsigned=False):
         # Hash only the final bytes, after stapling. A receipt exists only on full success.
         digest = hashlib.sha256(dmg.read_bytes()).hexdigest()
         (dist / (name + '.sha256')).write_text(digest + '  ' + name + '\n')
+        # Copy the final, stapled bytes. A fixed asset name gives the website a
+        # permanent /releases/latest/download/On-Air.dmg URL.
+        download_name = 'On-Air-unsigned.dmg' if unsigned else 'On-Air.dmg'
+        shutil.copyfile(dmg, dist / download_name)
+        (dist / (download_name + '.sha256')).write_text(digest + '  ' + download_name + '\n')
         details.update({'signed_notarized': not unsigned, 'file': name, 'sha256': digest,
+                        'download_file': download_name,
                         'commit': run('Record source commit', ['git', 'rev-parse', 'HEAD']).stdout.decode().strip()})
         (dist / 'release.json').write_text(json.dumps(details, indent=2) + '\n')
     return details
@@ -216,11 +223,15 @@ def verify_publishable(directory, tag, commit):
     expected = metadata(tag, info['build'])
     name = 'On-Air-' + tag + '.dmg'
     if (info.get('signed_notarized') is not True or info.get('commit') != commit or
-            info.get('file') != name or any(info.get(k) != v for k, v in expected.items())):
+            info.get('file') != name or info.get('download_file') != 'On-Air.dmg' or
+            any(info.get(k) != v for k, v in expected.items())):
         raise ReleaseError('Only the notarized artifact for this exact tag and commit can be published.')
-    digest = hashlib.sha256((directory / name).read_bytes()).hexdigest()
-    if digest != info.get('sha256') or (directory / (name + '.sha256')).read_text() != digest + '  ' + name + '\n':
-        raise ReleaseError('Release asset checksum mismatch.')
+    for asset in (name, 'On-Air.dmg'):
+        if not (directory / asset).is_file() or not (directory / (asset + '.sha256')).is_file():
+            raise ReleaseError('Release asset or checksum missing: ' + asset)
+        digest = hashlib.sha256((directory / asset).read_bytes()).hexdigest()
+        if digest != info.get('sha256') or (directory / (asset + '.sha256')).read_text() != digest + '  ' + asset + '\n':
+            raise ReleaseError('Release asset checksum mismatch: ' + asset)
     return info
 
 

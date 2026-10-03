@@ -142,11 +142,14 @@ class ReleaseTests(unittest.TestCase):
             digest = hashlib.sha256(data).hexdigest()
             (directory / name).write_bytes(data)
             (directory / (name + '.sha256')).write_text(digest + '  ' + name + '\n')
-            good = {**release.metadata('v1.2.3', '1'), 'signed_notarized': True, 'file': name, 'sha256': digest, 'commit': 'source-commit'}
+            (directory / 'On-Air.dmg').write_bytes(data)
+            (directory / 'On-Air.dmg.sha256').write_text(digest + '  On-Air.dmg\n')
+            good = {**release.metadata('v1.2.3', '1'), 'signed_notarized': True, 'file': name,
+                    'download_file': 'On-Air.dmg', 'sha256': digest, 'commit': 'source-commit'}
             manifest = directory / 'release.json'
             manifest.write_text(json.dumps(good))
             self.assertEqual(release.verify_publishable(directory, 'v1.2.3', 'source-commit'), good)
-            for key, value in [('signed_notarized', False), ('commit', 'other'), ('tag', 'v9.9.9'), ('file', '../outside.dmg'), ('prerelease', True), ('sha256', '0' * 64)]:
+            for key, value in [('signed_notarized', False), ('commit', 'other'), ('tag', 'v9.9.9'), ('file', '../outside.dmg'), ('download_file', '../outside.dmg'), ('prerelease', True), ('sha256', '0' * 64)]:
                 manifest.write_text(json.dumps({**good, key: value}))
                 with self.subTest(key=key), self.assertRaises(release.ReleaseError):
                     release.verify_publishable(directory, 'v1.2.3', 'source-commit')
@@ -154,6 +157,49 @@ class ReleaseTests(unittest.TestCase):
             (directory / name).write_bytes(b'changed after hashing')
             with self.assertRaisesRegex(release.ReleaseError, 'checksum'):
                 release.verify_publishable(directory, 'v1.2.3', 'source-commit')
+            (directory / name).write_bytes(data)
+            (directory / 'On-Air.dmg').write_bytes(b'wrong download bytes')
+            with self.assertRaisesRegex(release.ReleaseError, 'checksum'):
+                release.verify_publishable(directory, 'v1.2.3', 'source-commit')
+            (directory / 'On-Air.dmg').write_bytes(data)
+            (directory / 'On-Air.dmg.sha256').write_text('wrong checksum\n')
+            with self.assertRaisesRegex(release.ReleaseError, 'checksum'):
+                release.verify_publishable(directory, 'v1.2.3', 'source-commit')
+            (directory / 'On-Air.dmg').unlink()
+            with self.assertRaisesRegex(release.ReleaseError, 'missing'):
+                release.verify_publishable(directory, 'v1.2.3', 'source-commit')
+
+    def test_download_alias_and_checksums_use_final_stapled_bytes(self):
+        for unsigned in (False, True):
+            with self.subTest(unsigned=unsigned), tempfile.TemporaryDirectory() as folder:
+                def fake_run(label, arguments, **kwargs):
+                    if arguments[0] == 'xcodebuild':
+                        archive = Path(arguments[arguments.index('-archivePath') + 1])
+                        (archive / 'Products/Applications/On Air.app').mkdir(parents=True)
+                    if arguments[:3] == ['xcrun', 'stapler', 'staple'] and Path(arguments[-1]).suffix == '.dmg':
+                        with Path(arguments[-1]).open('ab') as stream:
+                            stream.write(b'-stapled')
+                    return subprocess.CompletedProcess([], 0, b'source-commit\n')
+                def fake_dmg(app, destination, work, logs):
+                    destination.write_bytes(b'disk image')
+                with patch.object(release, 'require_credentials'), patch.object(release, 'verify_app'), \
+                     patch.object(release, 'run', side_effect=fake_run), patch.object(release, 'notarize'), \
+                     patch.object(release, 'signing_assets') as signing, patch.object(release, 'create_dmg', side_effect=fake_dmg):
+                    signing.return_value.__enter__.return_value = ('keychain', 'identity', 'key.p8')
+                    info = release.build_package('v1.2.3', '1', folder, unsigned)
+                directory = Path(folder) / 'dist'
+                expected = b'disk image' if unsigned else b'disk image-stapled'
+                self.assertEqual((directory / info['file']).read_bytes(), expected)
+                self.assertEqual((directory / info['download_file']).read_bytes(), expected)
+                self.assertEqual(info['sha256'], hashlib.sha256(expected).hexdigest())
+                for asset in (info['file'], info['download_file']):
+                    self.assertEqual((directory / (asset + '.sha256')).read_text(), info['sha256'] + '  ' + asset + '\n')
+                if unsigned:
+                    self.assertFalse((directory / 'On-Air.dmg').exists())
+                    with self.assertRaises(release.ReleaseError):
+                        release.verify_publishable(directory, 'v1.2.3', 'source-commit')
+                else:
+                    self.assertEqual(release.verify_publishable(directory, 'v1.2.3', 'source-commit'), info)
 
     def test_rejected_notarization_never_creates_release_receipt_or_dmg(self):
         with tempfile.TemporaryDirectory() as folder:
@@ -171,6 +217,7 @@ class ReleaseTests(unittest.TestCase):
                     release.build_package('v1.2.3', '1', folder)
                 dmg.assert_not_called()
                 self.assertFalse((Path(folder) / 'dist/release.json').exists())
+                self.assertFalse((Path(folder) / 'dist/On-Air.dmg').exists())
 
 
 if __name__ == '__main__':
