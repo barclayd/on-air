@@ -38,4 +38,10 @@ python3 -m venv .build/benchmark-venv
 
 Generated WAVs and detailed results, including synthetic transcripts, are stored under `.build/benchmarks/`, which Git ignores. These development fixtures are separate from the app's memory-only handling of microphone recordings. See [testing instructions](TESTING.md) for the Swift smoke check and offline regression suite.
 
+## Version-formatting prompt check
+
+On 3 October 2026, a generated Daniel-voice recording said “Please use version one dot two dot three, rather than version zero dot ten dot two. We should organise the review tomorrow.” Both production transcription paths received the shared British English prompt plus generic guidance to write version numbers as digits separated by periods, with `1.2.3` as an example.
+
+`gpt-transcribe` (retry) returned `1.2.3` and `0.10.2`. `gpt-live-transcribe` still returned the version numbers as words, both with a spoken-to-written example in the prompt and with a more direct formatting instruction. The prompt is accepted, but this probe does **not** establish reliable version formatting for live dictation. No post-processing or extra model call was added. This was a small synthetic check, not a real-voice accuracy evaluation.
+
 Protocol references: [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription) and [file transcription](https://developers.openai.com/api/docs/guides/speech-to-text).

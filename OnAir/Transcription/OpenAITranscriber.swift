@@ -1,6 +1,11 @@
 import Foundation
 import OSLog
 
+private let transcriptionPrompt = """
+English dictation. Use British English spelling.
+Write spoken version numbers as digits separated by periods, for example version 1.2.3.
+"""
+
 /// A serial send chain keeps append/commit ordering intact, including a cold connection.
 /// A cancelled/failed turn closes its socket, preventing late events entering a later hold.
 @MainActor
@@ -84,7 +89,7 @@ final class OpenAITranscriber: Transcribing {
                         "format": ["type": "audio/pcm", "rate": 24_000],
                         "transcription": ["model": "gpt-live-transcribe", "languages": ["en"],
                             "keywords": ["AnyVan", "ALM"], "delay": "low",
-                            "prompt": "English dictation. Use British English spelling."],
+                            "prompt": transcriptionPrompt],
                         "turn_detection": NSNull(),
                     ]]],
                 ], on: socket)
@@ -279,7 +284,7 @@ enum FileTranscription {
         let boundary = UUID().uuidString
         var body = Data()
         for (name, value) in [("model", "gpt-transcribe"), ("languages[]", "en"), ("keywords[]", "AnyVan"),
-                              ("keywords[]", "ALM"), ("prompt", "English dictation. Use British English spelling.")] {
+                              ("keywords[]", "ALM"), ("prompt", transcriptionPrompt)] {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"dictation.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))
