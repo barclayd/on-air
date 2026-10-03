@@ -1,0 +1,12 @@
+# Cloudflare static asset headers (ignored by the Bun server).
+
+# Fingerprinted by the asset server, so the content at a URL never changes.
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# Remix serves compiled browser modules under their source extension. Without this,
+# Cloudflare serves .ts as video/mp2t and browsers refuse to run it.
+/*.ts
+  Content-Type: text/javascript; charset=utf-8
+/*.tsx
+  Content-Type: text/javascript; charset=utf-8

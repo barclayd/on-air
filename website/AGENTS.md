@@ -12,9 +12,14 @@ bun run test
 bun run typecheck
 bun run lint
 bun run format
+bun run build
+bun run preview
+bun run deploy
 ```
 
 `bun run dev` uses `bun --watch` to restart the server on change. There's no HMR, so reload the browser yourself.
+
+Production is a static prerender on Cloudflare (`scripts/build.ts`, `wrangler.jsonc`). Keep the page independent of the request, and run `bun run preview` after changing assets.
 
 ## Building Features
 
