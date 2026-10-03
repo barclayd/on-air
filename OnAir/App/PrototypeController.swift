@@ -21,6 +21,7 @@ final class PrototypeController {
     private(set) var pendingTranscript: String?
     private var retryAudio = Data()
     private var retryExpiry = 0.0
+    private var configurationPending = false
 
     @ObservationIgnored private let keys: FunctionKeyMonitor
     @ObservationIgnored private let meter: any MicrophoneMeasuring
@@ -86,8 +87,23 @@ final class PrototypeController {
         NotificationCenter.default.removeObserver(self)
     }
 
+    func settingsDidChange() {
+        configurationPending = true
+        applyPendingConfigurationIfIdle()
+    }
+
+    private func applyPendingConfigurationIfIdle() {
+        guard phase == .idle, configurationPending else { return }
+        configurationPending = false
+        transcriber.cancel()
+        if issue == TranscriptionError.credentials.localizedDescription ||
+            issue == TranscriptionError.rejected("invalid_api_key").localizedDescription { issue = nil }
+        transcriber.warm()
+    }
+
     private func beginHold() {
         guard phase == .idle else { return }
+        applyPendingConfigurationIfIdle()
         completion?.cancel()
         clearRecovery()
         issue = nil
@@ -240,6 +256,7 @@ final class PrototypeController {
             guard self.cycleID == id else { return }
             self.phase = .idle
             self.overlay.hide()
+            self.applyPendingConfigurationIfIdle()
             self.transcriber.warm()
         }
     }

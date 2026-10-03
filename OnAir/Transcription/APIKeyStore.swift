@@ -5,30 +5,56 @@ enum APIKeyStore {
     private static let service = "com.danbarclay.onair.openai"
     private static let account = "OPENAI_API_KEY"
 
-    static func load() throws -> String {
-        let query: [String: Any] = [
+    private static var query: [String: Any] {
+        [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service, kSecAttrAccount as String: account,
-            kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
         ]
+    }
+    private static let managedKey = "credentialsManagedInSettings"
+
+    static func load() throws -> String {
+        do {
+            guard let value = try read() else { throw TranscriptionError.credentials }
+            return value
+        } catch { throw TranscriptionError.credentials }
+    }
+
+    static func read() throws -> String? {
+        var query = query
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
         var result: CFTypeRef?
         let status = SecItemCopyMatching(query as CFDictionary, &result)
         if status == errSecSuccess, let data = result as? Data,
            let value = String(data: data, encoding: .utf8), value.hasPrefix("sk-") { return value }
-        guard status == errSecItemNotFound else { throw TranscriptionError.credentials }
+        guard status == errSecItemNotFound else { throw CredentialStoreError.unavailable }
+        // Preserve existing developer installs, but never resurrect a key removed in Settings.
+        guard !UserDefaults.standard.bool(forKey: managedKey) else { return nil }
         let path = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".env")
         guard let contents = try? String(contentsOf: path, encoding: .utf8), let key = parse(contents) else {
-            throw TranscriptionError.credentials
+            return nil
         }
-        let item: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service, kSecAttrAccount as String: account,
-            kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
-            kSecValueData as String: Data(key.utf8),
-        ]
-        let saved = SecItemAdd(item as CFDictionary, nil)
-        guard saved == errSecSuccess || saved == errSecDuplicateItem else { throw TranscriptionError.credentials }
+        try save(key)
         return key
+    }
+
+    static func save(_ key: String) throws {
+        let value = [kSecValueData as String: Data(key.utf8)]
+        var status = SecItemUpdate(query as CFDictionary, value as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query.merging(value) { _, new in new }
+            item[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw CredentialStoreError.unavailable }
+        UserDefaults.standard.set(true, forKey: managedKey)
+    }
+
+    static func remove() throws {
+        let status = SecItemDelete(query as CFDictionary)
+        guard status == errSecSuccess || status == errSecItemNotFound else { throw CredentialStoreError.unavailable }
+        UserDefaults.standard.set(true, forKey: managedKey)
     }
 
     /// Parse a literal dotenv assignment; never source or execute the user's file.
@@ -48,4 +74,21 @@ enum APIKeyStore {
         }
         return nil
     }
+}
+
+@MainActor
+protocol CredentialStoring {
+    func read() throws -> String?
+    func save(_ key: String) throws
+    func remove() throws
+}
+
+struct KeychainCredentials: CredentialStoring {
+    func read() throws -> String? { try APIKeyStore.read() }
+    func save(_ key: String) throws { try APIKeyStore.save(key) }
+    func remove() throws { try APIKeyStore.remove() }
+}
+
+enum CredentialStoreError: Error {
+    case unavailable
 }

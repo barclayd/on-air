@@ -15,6 +15,17 @@ final class EndToEndBridge {
     private var busy = false
     private var eventProbe: Any?
     private var passedThroughEvents = 0
+    private let settingsCredentials = FixtureCredentials()
+    private let settingsVerifier = FixtureKeyVerifier()
+    private var settingsModel: SettingsModel?
+
+    func makeSettings(controller: PrototypeController) -> SettingsModel {
+        let defaults = UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!
+        let model = SettingsModel(defaults: defaults, credentials: settingsCredentials,
+            verifier: settingsVerifier, didChange: { [weak controller] in controller?.settingsDidChange() })
+        settingsModel = model
+        return model
+    }
 
     init() {
         guard let path = ProcessInfo.processInfo.environment["ON_AIR_E2E_DIRECTORY"] else {
@@ -86,10 +97,28 @@ final class EndToEndBridge {
         timer?.invalidate()
         if let eventProbe { NSEvent.removeMonitor(eventProbe) }
         try? write(snapshot(controller), name: "terminated.json")
+        UserDefaults.standard.removePersistentDomain(forName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")
     }
 
     private func handle(_ command: [String: Any], controller: PrototypeController) throws {
         switch command["action"] as? String {
+        case "openSettings":
+            guard let (menu, index) = settingsCommand(in: NSApp.mainMenu) else { throw BridgeError.invalidCommand }
+            menu.performActionForItem(at: index)
+        case "closeSettings":
+            NSApp.windows.first { $0.identifier?.rawValue == "on-air.settings" }?.performClose(nil)
+        case "settingsNotes": settingsModel?.updateNotes(command["text"] as? String ?? "")
+        case "settingsKey": settingsModel?.updateKey(command["text"] as? String ?? "")
+        case "verifyKey": settingsModel?.verifyDraft()
+        case "removeKey": settingsModel?.removeKey()
+        case "renderSettings":
+            guard let window = NSApp.windows.first(where: { $0.identifier?.rawValue == "on-air.settings" }),
+                  let view = window.contentView?.superview, let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
+                throw BridgeError.renderFailed
+            }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            guard let data = bitmap.representation(using: .png, properties: [:]) else { throw BridgeError.renderFailed }
+            try data.write(to: directory.appendingPathComponent("settings.png"), options: .atomic)
         case "key":
             postKey(command)
         case "tap":
@@ -200,6 +229,16 @@ final class EndToEndBridge {
             "transcriptionFinishes": transcription.finishes,
             "transcriptionRetries": transcription.retries,
             "transcriptionBytes": transcription.audioBytes,
+            "transcriptionCancels": transcription.cancels,
+            "settingsCommand": settingsCommand(in: NSApp.mainMenu) != nil,
+            "settingsWindows": NSApp.windows.filter { $0.identifier?.rawValue == "on-air.settings" && $0.isVisible }.map(\.windowNumber),
+            "settingsNotes": settingsModel?.notes ?? "",
+            "settingsSaved": settingsModel?.notesSaved ?? false,
+            "settingsVerifying": settingsModel?.verifying ?? false,
+            "settingsVerified": settingsModel?.verified ?? false,
+            "settingsKeyMask": settingsModel?.maskedKey ?? "",
+            "settingsKeyError": settingsModel?.keyError ?? "",
+            "settingsStoredKey": settingsCredentials.key != nil,
             "panels": panels.map { panel -> [String: Any] in
                 ["number": panel.windowNumber, "visible": panel.isVisible,
                  "key": panel.isKeyWindow, "main": panel.isMainWindow,
@@ -212,6 +251,15 @@ final class EndToEndBridge {
                  "matchesScreen": NSScreen.screens.contains { $0.frame == panel.frame }]
             }
         ]
+    }
+
+    private func settingsCommand(in menu: NSMenu?) -> (NSMenu, Int)? {
+        guard let menu else { return nil }
+        for (index, item) in menu.items.enumerated() {
+            if item.keyEquivalent == ",", item.keyEquivalentModifierMask.contains(.command) { return (menu, index) }
+            if let found = settingsCommand(in: item.submenu) { return found }
+        }
+        return nil
     }
 
     private func write(_ object: [String: Any], name: String) throws {
@@ -286,6 +334,7 @@ final class FixtureTranscriber: Transcribing {
     var finishes = 0
     var retries = 0
     var audioBytes = 0
+    var cancels = 0
     func warm() {}
     func begin() { begins += 1; audioBytes = 0 }
     func append(_ pcm: Data) { audioBytes += pcm.count }
@@ -296,8 +345,23 @@ final class FixtureTranscriber: Transcribing {
         if fail { throw TranscriptionError.timeout }
         return text
     }
-    func cancel() {}
+    func cancel() { cancels += 1 }
     func shutdown() {}
+}
+
+final class FixtureCredentials: CredentialStoring {
+    var key: String?
+    func read() throws -> String? { key }
+    func save(_ key: String) throws { self.key = key }
+    func remove() throws { key = nil }
+}
+
+@MainActor
+final class FixtureKeyVerifier: APIKeyVerifying {
+    func verify(_ key: String) async throws {
+        try await Task.sleep(for: .milliseconds(150))
+        guard key == "sk-fixture-valid-settings-key" else { throw TranscriptionError.rejected("invalid_api_key") }
+    }
 }
 
 @MainActor

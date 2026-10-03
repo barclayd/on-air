@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **34 application E2E tests and one visual regression test comparing twelve images**, preceded by credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **38 application E2E tests and one visual regression test comparing twelve images**, preceded by settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about a minute on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -36,6 +36,7 @@ The bridge exists only when `E2E_TESTING` is explicitly compiled in. Ordinary De
 | Permissions | Denied/restricted/start failure; delayed grant starts capture after release or applies to another hold; grant needs relaunch |
 | Transcription | Partial/unfinished results pasted; duplicate paste; fast results skipping blue; changed focus receiving text; failed clips not retryable; retry reopening microphone; stale results after lock |
 | Version formatting | Spoken/mixed version components left unformatted before paste, retry, or Copy; additional transcription requests caused by formatting; ordinary text changed |
+| Settings | Missing standard Settings command; duplicate windows; lost notes; false key-verification success; key resurrection after removal; configuration changes interrupting dictation; window close leaving the app in the Dock |
 | Audio | Silence/loud PCM mapping, level decay, input change silently restarts capture, old callbacks affect a new hold |
 | Lifecycle | Sleep/lock/display changes leave capture active; cancelled completion hides a newer hold; quit leaves the panel/meter active |
 | Desktop integrity | Fn cycle changes foreground application or clipboard change count |
@@ -79,6 +80,8 @@ Version-formatting core checks in `Tools/VersionFormattingChecks.swift` cover 13
 
 Run the fast fixtures with `Tools/test-core.sh`. Changes to the fixture file itself trigger the app CI workflow, including when production source is unchanged.
 
+Settings core checks use isolated UserDefaults, memory-only credentials, and a controlled verifier that can return replies after cancellation. They cover immediate notes persistence, prompt composition, length validation, masked keys, rejected keys, Keychain save/remove failures, closing during verification, replacement races, and removal races. They do not access the real Keychain or network. Four Settings app-process tests invoke the standard application Settings menu command and exercise the real model/window/controller with those OS boundaries substituted. Their `settings.png` artifacts capture the native window for review; these are inspection evidence, not new pixel baselines. Settings tests briefly activate their isolated app and restore menu-bar-only mode when closed.
+
 ## Explicit live-API checks
 
 Normal regression tests make no OpenAI calls. Live checks are opt-in and bill the API key in `~/.env`:
@@ -86,7 +89,8 @@ Normal regression tests make no OpenAI calls. Live checks are opt-in and bill th
 ```sh
 xcrun swiftc -swift-version 6 -parse-as-library \
   OnAir/Transcription/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
-  OnAir/Transcription/OpenAITranscriber.swift Tools/TranscriptionSmoke.swift \
+  OnAir/Transcription/OpenAITranscriber.swift OnAir/Settings/DictationPreferences.swift \
+  Tools/TranscriptionSmoke.swift \
   -o .build/transcription-smoke
 .build/transcription-smoke .build/benchmarks/synthetic-10.wav
 ```

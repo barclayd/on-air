@@ -3,7 +3,7 @@ import Foundation
 
 @main
 struct CoreChecks {
-    @MainActor static func main() throws {
+    @MainActor static func main() async throws {
         func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
             guard condition() else { throw CheckFailure(message: message) }
         }
@@ -28,6 +28,7 @@ struct CoreChecks {
         print("PASS: PCM energy and lossless PCM16 WAV framing")
 
         try VersionFormattingChecks.run()
+        try await SettingsChecks.run()
 
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }

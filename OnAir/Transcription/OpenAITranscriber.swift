@@ -1,16 +1,13 @@
 import Foundation
 import OSLog
 
-private let transcriptionPrompt = """
-English dictation. Use British English spelling.
-Write spoken version numbers as digits separated by periods, for example version 1.2.3.
-"""
-
 /// A serial send chain keeps append/commit ordering intact, including a cold connection.
 /// A cancelled/failed turn closes its socket, preventing late events entering a later hold.
 @MainActor
 final class OpenAITranscriber: Transcribing {
     private let key: () throws -> String
+    private let notes: () -> String
+    private var connectionPrompt: String?
     private let session: URLSession
     private let endpoint: URL
     private var socket: URLSessionWebSocketTask?
@@ -30,13 +27,16 @@ final class OpenAITranscriber: Transcribing {
     private let logger = Logger(subsystem: "com.danbarclay.onair", category: "Transcription")
 
     init(key: @escaping () throws -> String = APIKeyStore.load, session: URLSession = .shared,
-         endpoint: URL = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!) {
+         endpoint: URL = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!,
+         notes: @escaping () -> String = { UserDefaults.standard.string(forKey: DictationPreferences.notesKey) ?? "" }) {
         self.key = key
+        self.notes = notes
         self.session = session
         self.endpoint = endpoint
     }
 
     func warm() {
+        refreshPromptIfIdle()
         _ = ensureConnection()
         guard maintenance == nil else { return }
         maintenance = Task { [weak self] in
@@ -63,6 +63,8 @@ final class OpenAITranscriber: Transcribing {
     private func ensureConnection() -> Task<Void, Error> {
         if let connection { return connection }
         let id = generation
+        let prompt = DictationPreferences.prompt(notes: notes())
+        connectionPrompt = prompt
         let task = Task { [weak self] in
             guard let self else { throw CancellationError() }
             do {
@@ -89,7 +91,7 @@ final class OpenAITranscriber: Transcribing {
                         "format": ["type": "audio/pcm", "rate": 24_000],
                         "transcription": ["model": "gpt-live-transcribe", "languages": ["en"],
                             "keywords": ["AnyVan", "ALM"], "delay": "low",
-                            "prompt": transcriptionPrompt],
+                            "prompt": prompt],
                         "turn_detection": NSNull(),
                     ]]],
                 ], on: socket)
@@ -124,6 +126,7 @@ final class OpenAITranscriber: Transcribing {
 
     func begin() {
         if turn != nil { cancel() }
+        refreshPromptIfIdle()
         turn = UUID()
         turnItem = nil
         completedItems.removeAll()
@@ -221,7 +224,22 @@ final class OpenAITranscriber: Transcribing {
 
     func retry(_ pcm: Data) async throws -> String {
         guard !pcm.isEmpty else { throw TranscriptionError.noAudio }
-        return try await FileTranscription.transcribe(pcm: pcm, key: key(), session: session)
+        return try await FileTranscription.transcribe(pcm: pcm, key: key(), session: session,
+            prompt: DictationPreferences.prompt(notes: notes()))
+    }
+
+    func verifyConnection() async throws {
+        try await withTaskCancellationHandler {
+            try await ensureConnection().value
+        } onCancel: {
+            Task { @MainActor [weak self] in self?.shutdown() }
+        }
+    }
+
+    private func refreshPromptIfIdle() {
+        guard turn == nil, let connectionPrompt,
+              connectionPrompt != DictationPreferences.prompt(notes: notes()) else { return }
+        disconnect(error: CancellationError())
     }
 
     func cancel() { disconnect(error: CancellationError()) }
@@ -238,6 +256,7 @@ final class OpenAITranscriber: Transcribing {
         socket = nil
         connection?.cancel()
         connection = nil
+        connectionPrompt = nil
         receiver?.cancel()
         receiver = nil
         sendTail?.cancel()
@@ -280,11 +299,12 @@ final class OpenAITranscriber: Transcribing {
 }
 
 enum FileTranscription {
-    static func transcribe(pcm: Data, key: String, session: URLSession) async throws -> String {
+    static func transcribe(pcm: Data, key: String, session: URLSession,
+                           prompt: String = DictationPreferences.basePrompt) async throws -> String {
         let boundary = UUID().uuidString
         var body = Data()
         for (name, value) in [("model", "gpt-transcribe"), ("languages[]", "en"), ("keywords[]", "AnyVan"),
-                              ("keywords[]", "ALM"), ("prompt", transcriptionPrompt)] {
+                              ("keywords[]", "ALM"), ("prompt", prompt)] {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
         body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"dictation.wav\"\r\nContent-Type: audio/wav\r\n\r\n".utf8))

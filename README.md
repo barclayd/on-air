@@ -6,7 +6,7 @@ Audio streams to `gpt-live-transcribe` while fn is held, using low delay, Englis
 
 A local Swift rule formats clear dotted version numbers before insertion or Copy: **one dot two dot six → 1.2.6**. It requires at least three numeric components and a spoken “dot”, supports mixed words/digits and English number words through 999, and preserves surrounding text. Two-component phrases and unsupported/ambiguous number components stay unchanged. No additional API call is made.
 
-The key is imported from the literal `OPENAI_API_KEY` assignment in `~/.env` on first use and stored in macOS Keychain. The file is parsed, never executed. API keys and transcript contents are excluded from app diagnostic logs.
+Add and verify your OpenAI key in **Settings…**; it is stored in macOS Keychain. Existing developer installs can still import a literal `OPENAI_API_KEY` assignment from `~/.env` on first use. That file is parsed, never executed, and is not re-imported after removing a key in Settings. API keys, dictation notes, and transcript contents are excluded from app diagnostic logs.
 
 ## Build and run
 
@@ -20,7 +20,17 @@ xcodebuild -project OnAir.xcodeproj -scheme OnAir \
 open ".build/Build/Products/Debug/On Air.app"
 ```
 
-There is no Dock icon, setup window, or settings window. The menu bar provides status, **Quit On Air**, and **Copy transcript** or **Retry transcription** when needed.
+The menu bar provides status, **Settings…**, **Quit On Air**, and **Copy transcript** or **Retry transcription** when needed. Settings is also available through the standard On Air application menu and **⌘,** while the app is active. The app appears in the Dock only while Settings is open; closing it returns to menu-bar-only operation.
+
+## Settings
+
+The native settings window follows the supplied On Air Settings design: a compact dark window with dictation notes and an OpenAI API key.
+
+- **Dictation notes** save automatically on this Mac and supplement the transcription context for both live dictation and retry. Keep them concise (up to 1,000 characters). Oversized edits show an error and preserve the previous usable notes. Changes apply to the next dictation without interrupting a current hold or finalisation.
+- **Verify** checks the key against the configured OpenAI transcription session without opening the microphone or sending audio. Only accepted keys are saved to Keychain. Existing stored keys are rechecked when Settings opens; offline/error states do not claim verification.
+- **Show / Hide** reveals only the draft key. A saved key shows its last four characters. **Remove** deletes On Air’s Keychain entry and prevents the legacy `~/.env` fallback from re-importing it; it does not revoke the key at OpenAI or modify `~/.env`.
+
+Notes are context hints, not a separate AI cleanup step or a guarantee of exact wording. The local version-number formatter still runs after transcription.
 
 The signed functional Release build is installed at `/Users/danbarclay/Applications/On Air.app`.
 
@@ -62,7 +72,7 @@ Each release includes a versioned DMG and an identical `On-Air.dmg` for the webs
 Tools/test.sh
 ```
 
-Runs 34 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes final-only pasting, formatted versions in live/retry/Copy results, preservation of ambiguous phrases and surrounding text, changed focus, fast results, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 38 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for settings, credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 

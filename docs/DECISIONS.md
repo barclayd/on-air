@@ -4,7 +4,7 @@ Interview date: 3 October 2026.
 
 ## Current delivery
 
-The initial delivery was a visual prototype. On 3 October 2026 the user explicitly approved adding working transcription and pasting, reusing the OpenAI key in `~/.env`. The functional build is installed and the user verified that the spoken AnyVan/ALM sentence was transcribed and pasted correctly. Setup flows, settings windows, and additional product screens remain deferred.
+The initial delivery was a visual prototype. On 3 October 2026 the user explicitly approved adding working transcription and pasting, reusing the OpenAI key in `~/.env`. The functional build is installed and the user verified that the spoken AnyVan/ALM sentence was transcribed and pasted correctly. The user subsequently requested the supplied On Air Settings design, accessible from the menu bar and standard macOS Settings command. Guided setup and other product screens remain deferred.
 
 - Voice-responsive, soft red glow along the bottom of the screen while holding fn / Globe. Subtle variations in height and pulse strength drift across it, with a different starting phase per hold. The user approved decorative asymmetry when directional audio is unavailable; this does not claim to locate the speaker.
 - On release, cool to blue, collapse into a thin travelling waveform, then fade out.
@@ -34,7 +34,9 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - If a complete clipboard snapshot is unavailable or exceeds 32 MiB, try Unicode keyboard input for single-line text, leaving the clipboard untouched. Recheck the original destination and released modifiers before posting to that application. Newlines/control characters and unsupported payloads retain the existing Copy fallback. This is a delivery fallback, not a transcript rewrite.
 - On transcription failure, retain only the failed clip in memory for up to five minutes. Offer Retry transcription, which does not activate the microphone. Clear it after success, a new dictation, or quitting. Never persist audio to disk.
 - API key in Keychain. No On Air cloud account.
-- Settings, editable vocabulary, launch at login, sounds, and guided setup remain deferred.
+- Settings contains auto-saving dictation notes and verified Keychain credentials, matching the supplied HTML reference. Notes supplement the shared live/retry prompt, with a 1,000-character limit and no cleanup pass. The native Settings scene is reachable through the menu bar and the standard application Settings command (⌘,). A normal app menu/Dock presence exists while the window is open, then accessory mode resumes on close.
+- Key verification authenticates and configures a transcription session without recording or sending audio. A successful verification must also save to Keychain before showing success. Cancelled/stale verification cannot save a replaced/removed key. Removing a key disables legacy automatic dotenv import. Configuration changes wait until dictation has finished before refreshing its warm connection.
+- A dedicated vocabulary editor, launch at login, sounds, and guided setup remain deferred.
 
 ## Implementation update — 3 October 2026
 

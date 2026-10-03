@@ -16,7 +16,7 @@ enum TranscriptionError: Error, LocalizedError {
 
     var errorDescription: String? {
         switch self {
-        case .credentials: "OpenAI key unavailable — check ~/.env or Keychain"
+        case .credentials: "Add your OpenAI key in Settings"
         case .connection: "Connection lost — retry transcription"
         case .timeout: "Transcription timed out — retry transcription"
         case .rejected(let code):
