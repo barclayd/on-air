@@ -2,8 +2,32 @@ name: Build and package checks
 
 on:
   pull_request:
+    paths:
+      - 'OnAir/**'
+      - 'OnAir.xcodeproj/**'
+      - 'Tests/**'
+      - 'Tools/release.py'
+      - 'Tools/ReleaseTests/**'
+      - 'Tools/test.sh'
+      - 'Tools/test-core.sh'
+      - 'Tools/CoreChecks.swift'
+      - 'Tools/RenderPreview.swift'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   push:
     branches: [main]
+    paths:
+      - 'OnAir/**'
+      - 'OnAir.xcodeproj/**'
+      - 'Tests/**'
+      - 'Tools/release.py'
+      - 'Tools/ReleaseTests/**'
+      - 'Tools/test.sh'
+      - 'Tools/test-core.sh'
+      - 'Tools/CoreChecks.swift'
+      - 'Tools/RenderPreview.swift'
+      - '.github/workflows/ci.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 
 permissions:
