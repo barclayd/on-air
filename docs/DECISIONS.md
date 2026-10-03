@@ -1,0 +1,48 @@
+# On Air — agreed direction
+
+Interview date: 3 October 2026.
+
+## Current delivery
+
+The initial delivery was a visual prototype. On 3 October 2026 the user explicitly approved adding working transcription and pasting, reusing the OpenAI key in `~/.env`. The functional build is installed and the user verified that the spoken AnyVan/ALM sentence was transcribed and pasted correctly. Setup flows, settings windows, and additional product screens remain deferred.
+
+- Voice-responsive, soft red glow along the bottom of the screen while holding fn / Globe.
+- On release, cool to blue, collapse into a thin travelling waveform, then fade out.
+- The film's title cards, captions, fn illustration, demo Notes window, and word-by-word typing are presentation elements, not app UI.
+- Keep the overlay on the destination app's display, chosen at fn-down. No mouse interception or focus stealing.
+- One active dictation at a time. Fn-down and fn-up are the only recording controls; no Escape, toggle, or buttons.
+- If another key is used during a hold, let the shortcut work normally and discard on fn release.
+- Follow the microphone selected in macOS; keep the chosen input fixed for the hold.
+- No custom setup/onboarding window. Native system permissions are still necessary.
+
+## Functional implementation and retained decisions
+
+- Personal native macOS app, Swift only, built-in frameworks, stable development signing, no App Sandbox.
+- Benchmark representative **10-, 30-, and 60-second** dictations before choosing a transcription engine.
+- English with British spelling; use **AnyVan** and **ALM** as initial keyword hints. Vocabulary editor later.
+- Prioritise compatibility with **Codex, Chrome, and Slack**.
+- Match Wispr Flow's responsive hold/speak/release experience. No separate AI cleanup or rewriting stage.
+- Prefer fewer recognition errors at about one second over roughly half a second with noticeably more mistakes. Around 700 ms remains an initial aspiration, not a verified performance guarantee.
+- Begin with OpenAI `gpt-live-transcribe` and `gpt-transcribe` benchmarks; another provider is allowed if the evidence favours it. Select model and delay from measurements.
+- Keep the transcription connection ready while On Air runs. The microphone stays off between fn holds.
+- Auto-paste only a completed transcript, never accumulated partial text on a deadline.
+- Only auto-paste if the original text field is still focused. Otherwise keep one temporary result available for Copy, without a history.
+- Preserve clipboard contents around pasting; don't overwrite a newer clipboard change when restoring.
+- On transcription failure, retain only the failed clip in memory for up to five minutes. Offer Retry transcription, which does not activate the microphone. Clear it after success, a new dictation, or quitting. Never persist audio to disk.
+- API key in Keychain. No On Air cloud account.
+- Settings, editable vocabulary, launch at login, sounds, and guided setup remain deferred.
+
+## Implementation update — 3 October 2026
+
+- Capture now uses `AVCaptureSession` with the selected microphone and PCM16 output. The original AVAudioEngine implementation changed its AUHAL device after graph creation, causing startup configuration notifications to stop capture on this Mac. That interruption discarded the hold and skipped blue. The user has verified the replacement works through transcription and pasting.
+- The initial benchmark selected `gpt-live-transcribe` at low delay. Generated 10/30/60-second fixtures finished 0.39/0.46/0.67 seconds after release. These are provisional synthetic measurements, not an accuracy evaluation of the user's voice. See `BENCHMARKS.md`.
+- The app imports the authorised key from `~/.env` into Keychain on first use. It does not execute that file, expose the key in logs, or copy it into the repository.
+- Automatic finalisation has a 20-second deadline. Retention is bounded to eight minutes per hold; retry uses a memory-only WAV upload and never activates capture.
+
+## Research corrections
+
+- Official OpenAI docs distinguish transcription during incoming audio (`gpt-live-transcribe`) from completed files or committed turns (`gpt-transcribe`). A third benchmark candidate worth considering is `gpt-transcribe` over a warm Realtime socket, which overlaps upload with speaking even though model transcription starts after commit.
+- Wispr announced its own **Canto** speech model on 17 September 2026. Do not claim that Wispr Flow currently uses `gpt-live-transcribe`.
+- The OpenWhispr source reports slow live-model completion in its tests. Treat that as a hypothesis to measure on representative audio, not a guaranteed property of the API.
+
+Sources: [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription), [Wispr Canto](https://wisprflow.ai/canto), [Wispr latency goals](https://wisprflow.ai/post/technical-challenges), [OpenWhispr realtime client](https://github.com/OpenWhispr/openwhispr/blob/main/src/helpers/openaiRealtimeStreaming.js).
