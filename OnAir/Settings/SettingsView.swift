@@ -29,7 +29,7 @@ struct SettingsView: View {
                     }
                     hint("Names, jargon or style On Air should know about.")
                     ZStack(alignment: .topLeading) {
-                        TextEditor(text: Binding(get: { model.notes }, set: model.updateNotes))
+                        TextEditor(text: Binding(get: { model.notes }, set: { model.updateNotes($0) }))
                             .font(.system(size: 14)).lineSpacing(5)
                             .scrollContentBackground(.hidden)
                             .focused($focus, equals: .notes)
@@ -105,10 +105,10 @@ struct SettingsView: View {
             HStack(spacing: 0) {
                 Group {
                     if model.showsKey {
-                        TextField("OpenAI API key", text: Binding(get: { model.keyDraft }, set: model.updateKey),
+                        TextField("OpenAI API key", text: Binding(get: { model.keyDraft }, set: { model.updateKey($0) }),
                                   prompt: Text("sk-…").foregroundStyle(SettingsPalette.secondary.opacity(0.65)))
                     } else {
-                        SecureField("OpenAI API key", text: Binding(get: { model.keyDraft }, set: model.updateKey),
+                        SecureField("OpenAI API key", text: Binding(get: { model.keyDraft }, set: { model.updateKey($0) }),
                                     prompt: Text("sk-…").foregroundStyle(SettingsPalette.secondary.opacity(0.65)))
                     }
                 }
