@@ -90,24 +90,47 @@ class ReleaseTests(unittest.TestCase):
                 with self.assertRaises(release.ReleaseError):
                     release.notarize('app.zip', 'key.p8', Path(folder), 'app')
 
-    def test_temporary_keychain_removed_when_signing_fails(self):
+    def test_keychain_search_list_and_material_restored_on_success_and_failure(self):
+        for failure in (None, 'search-list', 'identity', 'signing'):
+            with self.subTest(failure=failure):
+                self.check_keychain_cleanup(failure)
+
+    def check_keychain_cleanup(self, failure):
         with tempfile.TemporaryDirectory() as folder:
             environment = {k: 'fixture' for k in release.CREDENTIALS}
             environment.update({'RUNNER_TEMP': folder, 'APPLE_TEAM_ID': 'ABCDE12345',
                                 'APPLE_CERTIFICATE_P12_BASE64': base64.b64encode(b'fake p12').decode(),
                                 'APPLE_NOTARY_KEY_P8_BASE64': base64.b64encode(b'fake p8').decode()})
             commands = []
+            original = ['/Users/runner/Library/Keychains/login.keychain-db', '/tmp/another keychain.keychain-db']
+            current = original.copy()
             def fake_run(label, arguments, **kwargs):
                 commands.append(arguments)
+                if arguments[1] == 'list-keychains':
+                    if '-s' not in arguments:
+                        return subprocess.CompletedProcess([], 0, ('\n'.join('"' + path + '"' for path in current)).encode())
+                    current[:] = [str(path) for path in arguments[5:]]
+                    if failure == 'search-list' and current != original:
+                        raise release.ReleaseError('simulated search-list error')
                 if arguments[1] == 'create-keychain':
                     Path(arguments[-1]).touch()
                 if arguments[1] == 'find-identity':
+                    if failure == 'identity':
+                        return subprocess.CompletedProcess([], 0, b'0 valid identities found')
                     return subprocess.CompletedProcess([], 0, ('A' * 40 + ' "Developer ID Application: Fixture (ABCDE12345)"').encode())
                 return subprocess.CompletedProcess([], 0, b'')
             with patch.dict(os.environ, environment), patch.object(release, 'run', side_effect=fake_run):
-                with self.assertRaisesRegex(RuntimeError, 'simulated signing error'):
-                    with release.signing_assets():
-                        raise RuntimeError('simulated signing error')
+                def use_signing_assets():
+                    with release.signing_assets() as (keychain, _, _):
+                        self.assertEqual(current, [str(keychain), *original])
+                        if failure == 'signing':
+                            raise release.ReleaseError('simulated signing error')
+                if failure:
+                    with self.assertRaises(release.ReleaseError):
+                        use_signing_assets()
+                else:
+                    use_signing_assets()
+            self.assertEqual(current, original)
             self.assertTrue(any(command[1] == 'delete-keychain' for command in commands))
             self.assertEqual(list(Path(folder).iterdir()), [])
 
