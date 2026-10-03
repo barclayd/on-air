@@ -20,6 +20,7 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - Personal native macOS app, Swift only, built-in frameworks, stable development signing, no App Sandbox.
 - Benchmark representative **10-, 30-, and 60-second** dictations before choosing a transcription engine.
 - English with British spelling; use **AnyVan** and **ALM** as initial keyword hints. Vocabulary editor later.
+- The shared live/retry prompt adds: “Write spoken version numbers as digits separated by periods, for example version 1.2.3.” It makes no assumption about the topic of the dictation. This is model guidance, not a guaranteed conversion or a separate rewrite step. A synthetic API check converted the versions in the retry path but still returned words in the live path; see [benchmark notes](BENCHMARKS.md).
 - Prioritise compatibility with **Codex, Chrome, and Slack**.
 - Match Wispr Flow's responsive hold/speak/release experience. No separate AI cleanup or rewriting stage.
 - Prefer fewer recognition errors at about one second over roughly half a second with noticeably more mistakes. Around 700 ms remains an initial aspiration, not a verified performance guarantee.
