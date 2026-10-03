@@ -23,7 +23,7 @@ export function LandingPage() {
           On Air
         </a>
         <a
-          href="#download"
+          href={DOWNLOAD_URL}
           mix={[linkStyle, pillStyle, css({ padding: '6px 14px', fontSize: '13px' })]}
         >
           Download
