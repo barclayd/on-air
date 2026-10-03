@@ -39,7 +39,7 @@ Enter the other secrets in GitHub or through `gh secret set NAME --env release`,
 After this workflow is merged and the credentials are configured:
 
 1. Run `Tools/test.sh` on a logged-in Mac, including the existing app and visual regression tests.
-2. In Actions → **Release On Air** → **Run workflow**, select `main`, enter a proposed version such as `v0.1.0-beta.1`, and leave **publish** unchecked. This builds the current main commit. The version tag does not need to exist and is not created.
+2. In Actions → **Release On Air** → **Run workflow**, select `main`, enter a proposed version such as `v0.1.0-beta.1`, and leave **publish** unchecked. This builds the selected branch's exact workflow commit. A trusted release-maintainer branch can also be selected to validate pipeline fixes before merging, provided the `release` environment permits that branch. The version tag does not need to exist and is not created.
 3. Download the `notarized-release` artifact. It contains the DMG, its `.sha256`, and `release.json` with the source commit, version, build number, and checksum.
 4. Test a browser-downloaded copy on a fresh Mac: Gatekeeper, copying to Applications, first launch, permissions, fn, microphone, transcription and paste. Test upgrading an older installation too. Check the oldest supported macOS and Intel hardware before advertising that support.
 
@@ -57,11 +57,11 @@ git push origin v0.1.0-beta.1
 
 Pushing the tag automatically runs the signed workflow and publishes only after all verification succeeds. Alpha/beta/rc tags become GitHub prereleases; stable tags become the latest release. Public prereleases are public downloads.
 
-A manual run with **publish** checked builds the existing version tag, requires it to be on main, and publishes it. It does not create tags. This is useful to retry a tag run after configuration is fixed. A manual run with **publish** unchecked always builds main, even if the version label happens to match an older tag.
+A manual run with **publish** checked builds the existing version tag, requires it to be on main, and publishes it. It does not create tags. This is useful to retry a tag run after configuration is fixed. A manual run with **publish** unchecked builds the selected branch's exact workflow commit, even if the version label happens to match an older tag. Run previews only from trusted branches: they receive the Apple credentials from the `release` environment, although they cannot publish a GitHub release.
 
 `CFBundleShortVersionString` uses the numeric version without a prerelease suffix. `CFBundleVersion` uses the release workflow's run number (1–9999). Each new run increments it; a rerun of the same run retains it. The Git tag and DMG filename retain the prerelease label.
 
-Assets are assembled in a draft, then the complete release is published. Existing releases are never overwritten. If uploading fails and leaves a draft, inspect and remove that draft before rerunning; use a new version for any already-published build. Release diagnostics include archive logs and Apple's notarization response and diagnostic log, retained for 14 days. Pending, rejected, malformed, or timed-out notarization results all block publication. Each Apple submission waits up to 20 minutes; an initial submission can require longer, in which case inspect its ID in the diagnostics before retrying.
+Assets are assembled in a draft, then the complete release is published. Existing releases are never overwritten. If uploading fails and leaves a draft, inspect and remove that draft before rerunning; use a new version for any already-published build. Release diagnostics include archive and signing logs and Apple's notarization response and diagnostic log, retained for 14 days. Pending, rejected, malformed, or timed-out notarization results all block publication. Each Apple submission waits up to 20 minutes; an initial submission can require longer, in which case inspect its ID in the diagnostics before retrying.
 
 ## Local packaging checks
 

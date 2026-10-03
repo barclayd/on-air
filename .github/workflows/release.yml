@@ -37,16 +37,20 @@ jobs:
     steps:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
-          # A manual preview builds main without creating a tag or a release.
+          # A manual preview builds the selected workflow commit without publishing.
           # Publishing always builds an existing tag and verifies its ancestry.
-          ref: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish && 'main' || format('refs/tags/{0}', inputs.tag || github.ref_name) }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && !inputs.publish && github.sha || format('refs/tags/{0}', inputs.tag || github.ref_name) }}
           fetch-depth: 0
           persist-credentials: false
       - name: Validate version and restrict releases to commits on main
         id: metadata
+        env:
+          PUBLISH_RELEASE: ${{ github.event_name == 'push' || inputs.publish }}
         run: |
           python3 Tools/release.py metadata --tag "$RELEASE_TAG" --build "$GITHUB_RUN_NUMBER"
-          git merge-base --is-ancestor HEAD origin/main
+          if [[ "$PUBLISH_RELEASE" == true ]]; then
+            git merge-base --is-ancestor HEAD origin/main
+          fi
       - name: Record exact source commit
         id: source
         run: echo "commit=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"

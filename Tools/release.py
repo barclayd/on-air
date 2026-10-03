@@ -10,6 +10,7 @@ from pathlib import Path
 import plistlib
 import re
 import secrets
+import shlex
 import signal
 import subprocess
 import sys
@@ -74,6 +75,9 @@ def signing_assets():
         directory = Path(directory)
         keychain = directory / 'release.keychain-db'
         password = secrets.token_urlsafe(32)
+        original_keychains = shlex.split(run('Read keychain search list',
+            ['security', 'list-keychains', '-d', 'user']).stdout.decode())
+        search_list_changed = False
         try:
             for name, variable in [('certificate.p12', 'APPLE_CERTIFICATE_P12_BASE64'), ('AuthKey.p8', 'APPLE_NOTARY_KEY_P8_BASE64')]:
                 try:
@@ -89,12 +93,22 @@ def signing_assets():
             run('Import Developer ID certificate', ['security', 'import', directory / 'certificate.p12', '-k', keychain,
                  '-P', os.environ['APPLE_CERTIFICATE_PASSWORD'], '-T', '/usr/bin/codesign', '-T', '/usr/bin/security'])
             run('Allow noninteractive signing', ['security', 'set-key-partition-list', '-S', 'apple-tool:,apple:,codesign:', '-s', '-k', password, keychain])
+            # codesign resolves the issuer chain through the search list, even
+            # when --keychain selects the private key explicitly.
+            search_list_changed = True
+            run('Make signing certificate chain discoverable',
+                ['security', 'list-keychains', '-d', 'user', '-s', keychain, *original_keychains])
             output = run('Validate Developer ID identity', ['security', 'find-identity', '-v', '-p', 'codesigning', keychain]).stdout.decode()
             identity = developer_identity(output, os.environ['APPLE_TEAM_ID'])
             yield keychain, identity, directory / 'AuthKey.p8'
         finally:
-            if keychain.exists():
-                run('Delete temporary signing keychain', ['security', 'delete-keychain', keychain], check=False)
+            try:
+                if search_list_changed:
+                    run('Restore keychain search list',
+                        ['security', 'list-keychains', '-d', 'user', '-s', *original_keychains], check=False)
+            finally:
+                if keychain.exists():
+                    run('Delete temporary signing keychain', ['security', 'delete-keychain', keychain], check=False)
 
 
 def notarize(artifact, key, logs, name):
@@ -159,7 +173,8 @@ def build_package(tag, build, output, unsigned=False):
         else:
             with signing_assets() as (keychain, identity, key):
                 run('Sign app with Developer ID', ['codesign', '--force', '--sign', identity, '--keychain', keychain,
-                    '--options', 'runtime', '--timestamp', '--entitlements', ROOT / 'OnAir/OnAir.entitlements', app])
+                    '--options', 'runtime', '--timestamp', '--entitlements', ROOT / 'OnAir/OnAir.entitlements', app],
+                    log=logs / 'app-signing.log')
                 run('Verify app signature', ['codesign', '--verify', '--strict', app])
                 archive_zip = work / 'OnAir.zip'
                 run('Package app for notarization', ['ditto', '-c', '-k', '--keepParent', app, archive_zip])
@@ -169,7 +184,7 @@ def build_package(tag, build, output, unsigned=False):
                 run('Assess app with Gatekeeper', ['spctl', '--assess', '--type', 'execute', '--verbose=2', app])
                 create_dmg(app, dmg, work, logs)
                 run('Sign disk image', ['codesign', '--sign', identity, '--keychain', keychain,
-                    '--timestamp', '--identifier', 'com.danbarclay.onair.dmg', dmg])
+                    '--timestamp', '--identifier', 'com.danbarclay.onair.dmg', dmg], log=logs / 'dmg-signing.log')
                 notarize(dmg, key, logs, 'dmg')
                 run('Staple disk image ticket', ['xcrun', 'stapler', 'staple', dmg])
                 run('Validate disk image ticket', ['xcrun', 'stapler', 'validate', dmg])
