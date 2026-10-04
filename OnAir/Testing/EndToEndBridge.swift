@@ -118,6 +118,8 @@ final class EndToEndBridge {
         case "setupKeyboard": onboarding?.model.configureKeyboard()
         case "setupConfirmKeyboard": onboarding?.model.confirmGlobeSetting(command["confirmed"] as? Bool ?? true)
         case "setupContinue": onboarding?.model.continueSetup()
+        case "setupVerify": onboarding?.model.verifyConnection()
+        case "setupNotesFocus": onboarding?.model.notesFocusChanged(command["focused"] as? Bool ?? false)
         case "setupBack": onboarding?.model.back()
         case "setupDone":
             if onboarding?.model.finish() == true { onboarding?.close() }
@@ -266,6 +268,8 @@ final class EndToEndBridge {
             "setupPermissionsReady": onboarding?.model.permissionsReady ?? false,
             "setupReady": onboarding?.model.ready ?? false,
             "setupCompleted": onboarding?.model.completed ?? false,
+            "setupWidth": onboarding?.window?.frame.width ?? 0,
+            "setupHeight": onboarding?.window?.frame.height ?? 0,
             "setupNotice": onboarding?.model.notice ?? "",
             "setupOpenedPanes": setupSystem.openedPanes.map(\.rawValue),
             "setupAccessibilityRequests": setupSystem.accessibilityRequests,

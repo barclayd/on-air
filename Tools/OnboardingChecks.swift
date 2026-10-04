@@ -118,7 +118,46 @@ enum OnboardingChecks {
         settings.dismiss(owner: "onboarding")
         settings.dismiss(owner: "onboarding") // Native close and SwiftUI disappearance may both arrive.
         try check(settings.keyDraft.isEmpty && !settings.showsKey, "Final close clears sensitive presentation state")
+        try await automaticTransitions()
         print("PASS: onboarding permissions, consent, deep links, revocation, persisted notes/keys, completion, key gating, immediate configuration, and shared window lifecycle")
+    }
+
+    private static func automaticTransitions() async throws {
+        let suite = "com.danbarclay.onair.auto-setup-checks.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let system = FakeSystem()
+        system.microphoneStatus = .authorized
+        system.accessibilityTrusted = true
+        let settings = SettingsModel(defaults: defaults, credentials: Credentials(), verifier: Verifier())
+        let model = OnboardingModel(settings: settings, system: system, defaults: defaults)
+        model.appear()
+        model.confirmGlobeSetting(true)
+        model.disappear()
+        try await Task.sleep(for: .milliseconds(750))
+        try check(model.step == .permissions, "Closing setup cancels pending automatic navigation")
+        model.appear()
+        defer { model.disappear() }
+        try await wait { model.step == .connection }
+        settings.updateKey("sk-fixture-valid-key")
+        model.verifyConnection()
+        try await wait { settings.verified }
+        model.notesFocusChanged(true)
+        try await Task.sleep(for: .milliseconds(800))
+        try check(model.step == .connection, "Verification must not hide notes while the user is editing them")
+        settings.updateNotes("Use British English.")
+        model.notesFocusChanged(false)
+        system.accessibilityTrusted = false
+        model.refresh()
+        try await Task.sleep(for: .milliseconds(800))
+        try check(model.step == .permissions && !model.ready, "Revocation cancels pending completion")
+        system.accessibilityTrusted = true
+        model.refresh()
+        try await wait { model.step == .connection }
+        try await Task.sleep(for: .milliseconds(800))
+        try check(model.step == .connection, "A cached key does not skip the notes review screen")
+        model.verifyConnection()
+        try check(model.step == .ready && model.finish(), "The existing-key action continues with saved notes")
     }
 
     private static func check(_ value: @autoclosure () -> Bool, _ message: String) throws {

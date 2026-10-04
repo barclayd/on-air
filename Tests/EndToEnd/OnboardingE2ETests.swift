@@ -9,6 +9,8 @@ final class OnboardingE2ETests: XCTestCase {
         app = try AppDriver(test: name, permission: "pending", accessibility: false, onboarding: true)
         let first = try app.wait("first launch setup") { !($0.raw["setupWindows"] as? [Int] ?? []).isEmpty }
         XCTAssertFalse(first.bool("accessory"))
+        XCTAssertEqual(first.number("setupWidth"), 540)
+        XCTAssertEqual(first.number("setupHeight"), 500, "The design dimensions include the native title bar")
         XCTAssertEqual(first.number("permissionRequests"), 0)
         XCTAssertEqual(first.number("setupAccessibilityRequests"), 0)
         try app.send("openSetup")
@@ -41,25 +43,23 @@ final class OnboardingE2ETests: XCTestCase {
         XCTAssertFalse(try app.send("snapshot").bool("setupGlobeConfirmed"))
         try capture("keyboard-help")
         try app.send("setupConfirmKeyboard")
-        try app.send("setupContinue")
-        XCTAssertEqual(try app.send("snapshot").raw["setupStep"] as? String, "connection")
+        try app.wait("permissions advance automatically") { ($0.raw["setupStep"] as? String) == "connection" }
         try capture("connection")
         try app.send("settingsKey", ["text": "sk-fixture-rejected-settings-key"])
-        try app.send("verifyKey")
+        try app.send("setupVerify")
         let rejected = try app.wait("invalid key stays editable") { !$0.bool("settingsVerifying") }
         XCTAssertFalse(rejected.bool("setupReady"))
         try capture("key-error")
         try app.send("setupDone")
         XCTAssertFalse(try app.send("snapshot").bool("setupCompleted"))
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
-        try app.send("verifyKey")
+        try app.send("setupVerify")
         let verified = try app.wait("verified saved key") { $0.bool("settingsVerified") }
-        XCTAssertEqual(verified.raw["setupStep"] as? String, "connection", "Verification leaves notes editable")
-        try app.send("setupContinue")
-        let ready = try app.wait("ready screen") { ($0.raw["setupStep"] as? String) == "ready" }
+        XCTAssertEqual(verified.raw["setupStep"] as? String, "connection", "Successful verification shows its status before transitioning")
+        let ready = try app.wait("verification advances automatically") { ($0.raw["setupStep"] as? String) == "ready" }
         XCTAssertTrue(ready.bool("settingsStoredKey"))
         XCTAssertEqual(ready.number("starts"), 0)
-        try app.remains("completion animation is decorative", for: 2.5) { $0.number("starts") == 0 && $0.number("transcriptionBegins") == 0 }
+        try app.remains("completion animation is decorative", for: 5.7) { $0.number("starts") == 0 && $0.number("transcriptionBegins") == 0 }
         try capture("ready")
         try app.send("setupDone")
         let finished = try app.wait("Done returns to menu bar") { $0.bool("accessory") }
@@ -81,11 +81,11 @@ final class OnboardingE2ETests: XCTestCase {
         try app.send("openSettings")
         try app.wait("settings coexists") { !($0.raw["settingsWindows"] as? [Int] ?? []).isEmpty }
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
-        try app.send("verifyKey")
+        try app.send("setupVerify")
         try app.send("closeSettings")
         let ready = try app.wait("closing Settings keeps setup's verification") { $0.bool("setupReady") }
         XCTAssertFalse(ready.bool("accessory"))
-        try app.send("setupContinue")
+        try app.wait("automatic ready transition") { ($0.raw["setupStep"] as? String) == "ready" }
         try app.send("accessibility", ["allowed": false])
         let revoked = try app.wait("ready revoked without a click") { ($0.raw["setupStep"] as? String) == "permissions" }
         XCTAssertFalse(revoked.bool("setupReady"))
@@ -116,12 +116,14 @@ final class OnboardingE2ETests: XCTestCase {
         try app.send("setupContinue")
         let notes = "Use British spelling. Write HubSpot.\nCafé 👩🏽‍💻"
         try app.send("settingsNotes", ["text": notes])
+        try app.send("setupNotesFocus", ["focused": true])
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
-        try app.send("verifyKey")
+        try app.send("setupVerify")
         let verified = try app.wait("verified key without skipping notes") { $0.bool("settingsVerified") }
         XCTAssertEqual(verified.raw["setupStep"] as? String, "connection")
         try capture("notes-and-key")
         try app.send("setupBack")
+        try app.send("setupNotesFocus", ["focused": false])
         try app.send("setupContinue")
         XCTAssertEqual(try app.send("snapshot").raw["setupStep"] as? String, "connection")
         try app.send("setupContinue")
@@ -152,7 +154,7 @@ final class OnboardingE2ETests: XCTestCase {
         try app.send("setupContinue")
         try app.send("settingsNotes", ["text": String(repeating: "x", count: 1_001)])
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
-        try app.send("verifyKey")
+        try app.send("setupVerify")
         try app.wait("verified key") { $0.bool("settingsVerified") }
         try app.send("setupContinue")
         let invalid = try app.send("setupDone")
@@ -182,13 +184,13 @@ final class OnboardingE2ETests: XCTestCase {
     }
 
     private func capture(_ name: String) throws {
-        // Capture the settled layout, not the 220 ms crossfade between steps.
-        try app.remains("setup stays open", for: 0.3) { !($0.raw["setupWindows"] as? [Int] ?? []).isEmpty }
+        // The supplied design uses a 500 ms crossfade between the two forms.
+        try app.remains("setup stays open", for: 0.6) { !($0.raw["setupWindows"] as? [Int] ?? []).isEmpty }
         try app.send("renderSetup")
         let source = app.directory.appendingPathComponent("setup.png")
         let bitmap = try XCTUnwrap(NSBitmapImageRep(data: Data(contentsOf: source)))
         XCTAssertGreaterThanOrEqual(bitmap.pixelsWide, 540)
-        XCTAssertGreaterThanOrEqual(bitmap.pixelsHigh, 500)
+        XCTAssertEqual(Double(bitmap.pixelsHigh) / Double(bitmap.pixelsWide), 500.0 / 540.0, accuracy: 0.002, "Native window proportions must match the HTML")
         try FileManager.default.copyItem(at: source, to: app.directory.appendingPathComponent("setup-\(name).png"))
     }
 }

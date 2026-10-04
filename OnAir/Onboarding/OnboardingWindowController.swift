@@ -13,7 +13,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
 
     func present() {
         if window == nil {
-            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 540),
+            let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 540, height: 500),
                                   styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
             window.identifier = NSUserInterfaceItemIdentifier("on-air.onboarding")
             window.title = "Set up On Air"
@@ -24,10 +24,22 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
             window.delegate = self
-            window.contentView = NSHostingView(rootView: OnboardingView(model: model, onDone: { [weak self] in
+            let content = NSHostingView(rootView: OnboardingView(model: model, onDone: { [weak self] in
                 guard let self, self.model.finish() else { return }
                 self.close()
             }))
+            // Include native title-bar chrome in the design's outer dimensions.
+            // NSHostingView otherwise adds the title-bar safe area to its ideal height.
+            content.sizingOptions = []
+            content.safeAreaRegions = []
+            // An AppKit container owns the outer geometry. Hosting directly as the
+            // content view lets SwiftUI add a title-bar-height strip on macOS 27.
+            let container = NSView(frame: NSRect(x: 0, y: 0, width: 540, height: 500))
+            content.frame = container.bounds
+            content.autoresizingMask = [.width, .height]
+            container.addSubview(content)
+            window.contentView = container
+            window.setFrame(NSRect(x: 0, y: 0, width: 540, height: 500), display: false)
             window.center()
             self.window = window
         }

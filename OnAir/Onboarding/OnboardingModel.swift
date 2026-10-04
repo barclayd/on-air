@@ -66,10 +66,15 @@ final class OnboardingModel {
     private(set) var showsAccessibilityInstructions = false
     private(set) var notice: String?
     private(set) var completed: Bool
+    private(set) var verificationRequested = false
+    private(set) var editingNotes = false
     @ObservationIgnored private let system: any SetupSystemAccess
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var poll: Timer?
     @ObservationIgnored private var promptedAccessibility = false
+    @ObservationIgnored private var transition: Task<Void, Never>?
+    @ObservationIgnored private var transitionTarget: Step?
+    @ObservationIgnored private var presented = false
 
     init(settings: SettingsModel, system: any SetupSystemAccess = MacSetupSystemAccess(), defaults: UserDefaults = .standard) {
         self.settings = settings
@@ -88,6 +93,7 @@ final class OnboardingModel {
     var shouldPresentOnLaunch: Bool { !completed || !permissionsReady || !settings.hasSavedKey }
 
     func appear() {
+        presented = true
         settings.present(owner: "onboarding")
         refresh()
         if completed && permissionsReady { step = .connection }
@@ -103,6 +109,10 @@ final class OnboardingModel {
     }
 
     func disappear() {
+        presented = false
+        verificationRequested = false
+        editingNotes = false
+        cancelTransition()
         poll?.invalidate()
         poll = nil
         settings.dismiss(owner: "onboarding")
@@ -115,8 +125,53 @@ final class OnboardingModel {
     }
 
     func reconcile() {
-        if step != .permissions && !permissionsReady { step = .permissions }
-        if step == .ready && !ready { step = .connection }
+        if step != .permissions && !permissionsReady {
+            step = .permissions
+            verificationRequested = false
+        }
+        if step == .ready && !ready {
+            step = .connection
+            verificationRequested = false
+        }
+        let target: Step? = if presented && step == .permissions && permissionsReady { .connection }
+            else if presented && step == .connection && ready && verificationRequested && !editingNotes { .ready }
+            else { nil }
+        guard target != transitionTarget else { return }
+        cancelTransition()
+        guard let target else { return }
+        transitionTarget = target
+        transition = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(target == .connection ? 650 : 700)) } catch { return }
+            guard let self, self.presented, self.transitionTarget == target else { return }
+            self.refresh()
+            guard self.transitionTarget == target else { return }
+            self.continueSetup()
+        }
+    }
+
+    func notesFocusChanged(_ focused: Bool) {
+        editingNotes = focused
+        reconcile()
+    }
+
+    /// Only an explicit Verify starts automatic completion. A stored key must
+    /// leave the notes screen available for review when setup is reopened.
+    func verifyConnection() {
+        guard step == .connection else { return }
+        if settings.verified && settings.maskedKey != nil {
+            continueSetup()
+        } else {
+            verificationRequested = true
+            if settings.maskedKey != nil { settings.retryStoredVerification() }
+            else { settings.verifyDraft() }
+            reconcile()
+        }
+    }
+
+    private func cancelTransition() {
+        transition?.cancel()
+        transition = nil
+        transitionTarget = nil
     }
 
     func enableMicrophone() {
@@ -169,16 +224,22 @@ final class OnboardingModel {
         case .permissions:
             guard permissionsReady else { return }
             // Even an existing verified key must not skip the notes/review screen.
+            cancelTransition()
             step = .connection
         case .connection:
             guard ready else { return }
             settings.flushPendingNotesChanges()
+            cancelTransition()
             step = .ready
         case .ready: break
         }
     }
 
-    func back() { step = .permissions }
+    func back() {
+        cancelTransition()
+        verificationRequested = false
+        step = .permissions
+    }
 
     @discardableResult func finish() -> Bool {
         refresh()
