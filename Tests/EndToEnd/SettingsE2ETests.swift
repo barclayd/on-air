@@ -49,6 +49,9 @@ final class SettingsE2ETests: XCTestCase {
         try app.send("verifyKey")
         let rejected = try app.wait("key rejection") { !$0.bool("settingsVerifying") && !($0.raw["settingsKeyError"] as? String ?? "").isEmpty }
         XCTAssertFalse(rejected.bool("settingsStoredKey"))
+        try app.send("renderSettings")
+        try FileManager.default.copyItem(at: app.directory.appendingPathComponent("settings.png"),
+                                        to: app.directory.appendingPathComponent("settings-error.png"))
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
         try app.send("verifyKey")
         let verified = try app.wait("verified masked key") { $0.bool("settingsVerified") }
@@ -107,5 +110,35 @@ final class SettingsE2ETests: XCTestCase {
         let complete = try app.wait("dictation pasted") { $0.idle && $0.number("pasteCount") == 1 }
         XCTAssertEqual(complete.raw["pastedText"] as? String, "Keep this dictation intact.")
         XCTAssertEqual(complete.number("transcriptionCancels"), initial.number("transcriptionCancels"))
+    }
+
+    func testDesignedGlowSliderSupportsPointerKeyboardAndAccessibilityWithoutRecording() throws {
+        let initial = try launchAndOpen()
+        XCTAssertEqual(initial.raw["settingsGlowLabel"] as? String, "Glow intensity")
+        XCTAssertEqual(initial.raw["settingsGlowDescription"] as? String, "50%")
+        try app.send("settingsGlowArrow", ["right": true])
+        let next = try app.wait("right arrow changes one calibrated level") { abs($0.number("settingsGlow") - 0.6) < 0.001 }
+        XCTAssertEqual(next.raw["settingsGlowDescription"] as? String, "60%")
+        try app.send("settingsGlowArrow", ["right": false])
+        _ = try app.wait("left arrow restores the default") { $0.number("settingsGlow") == 0.5 }
+        try app.send("settingsGlowAccessible", ["increase": true])
+        _ = try app.wait("VoiceOver increment updates the setting") { abs($0.number("settingsGlow") - 0.6) < 0.001 }
+        try app.send("settingsGlowDrag", ["value": 0.3])
+        _ = try app.wait("dragging the thumb updates the setting") { abs($0.number("settingsGlow") - 0.3) < 0.001 }
+        try app.send("settingsGlowDrag", ["value": 0.8])
+        _ = try app.wait("reversing the drag updates the setting") { abs($0.number("settingsGlow") - 0.8) < 0.001 }
+        try app.send("settingsGlow", ["value": 1.0])
+        try app.send("settingsGlowArrow", ["right": true])
+        XCTAssertEqual(try app.send("snapshot").number("settingsGlow"), 1)
+        try app.send("settingsGlow", ["value": 0.0])
+        try app.send("settingsGlowAccessible", ["increase": false])
+        let minimum = try app.send("snapshot")
+        XCTAssertEqual(minimum.number("settingsGlow"), 0)
+        XCTAssertEqual(minimum.raw["settingsGlowDescription"] as? String, "0%")
+        XCTAssertEqual(minimum.number("starts"), 0)
+        XCTAssertEqual(minimum.number("transcriptionCancels"), initial.number("transcriptionCancels"))
+        try app.send("closeSettings")
+        try app.send("openSettings")
+        XCTAssertEqual(try app.send("snapshot").raw["settingsGlowDescription"] as? String, "0%")
     }
 }
