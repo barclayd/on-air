@@ -138,6 +138,36 @@ final class EndToEndBridge {
             NSApp.windows.first { $0.identifier?.rawValue == "on-air.settings" }?.performClose(nil)
         case "settingsNotes": settingsModel?.updateNotes(command["text"] as? String ?? "")
         case "settingsGlow": settingsModel?.glow.updateIntensity(command["value"] as? Double ?? 0.5)
+        case "settingsGlowArrow":
+            guard let slider = glowSlider(), let window = slider.window else { throw BridgeError.invalidCommand }
+            window.makeFirstResponder(slider)
+            let right = command["right"] as? Bool ?? true
+            guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                context: nil, characters: right ? "\u{F703}" : "\u{F702}",
+                charactersIgnoringModifiers: right ? "\u{F703}" : "\u{F702}", isARepeat: false,
+                keyCode: right ? 124 : 123) else { throw BridgeError.invalidCommand }
+            NSApp.postEvent(event, atStart: false)
+        case "settingsGlowAccessible":
+            guard let slider = glowSlider() else { throw BridgeError.invalidCommand }
+            if command["increase"] as? Bool ?? true { _ = slider.accessibilityPerformIncrement() }
+            else { _ = slider.accessibilityPerformDecrement() }
+        case "settingsGlowDrag":
+            guard let slider = glowSlider(), let window = slider.window,
+                  let cell = slider.cell as? NSSliderCell else { throw BridgeError.invalidCommand }
+            let knob = cell.knobRect(flipped: slider.isFlipped)
+            let start = slider.convert(NSPoint(x: knob.midX, y: knob.midY), to: nil)
+            let fraction = command["value"] as? Double ?? 0.5
+            let end = slider.convert(NSPoint(x: 9 + (slider.bounds.width - 18) * fraction, y: slider.bounds.midY), to: nil)
+            for (index, pair) in [(NSEvent.EventType.leftMouseDown, start), (.leftMouseDragged, end), (.leftMouseUp, end)].enumerated() {
+                let (type, point) = pair
+                guard let event = NSEvent.mouseEvent(with: type, location: point, modifierFlags: [],
+                    timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                    context: nil, eventNumber: index, clickCount: 1, pressure: type == .leftMouseUp ? 0 : 1) else {
+                    throw BridgeError.invalidCommand
+                }
+                NSApp.postEvent(event, atStart: false)
+            }
         case "settingsKey": settingsModel?.updateKey(command["text"] as? String ?? "")
         case "verifyKey": settingsModel?.verifyDraft()
         case "removeKey": settingsModel?.removeKey()
@@ -236,6 +266,14 @@ final class EndToEndBridge {
         NSApp.postEvent(event, atStart: false)
     }
 
+    private func glowSlider() -> NSSlider? {
+        func find(_ view: NSView) -> NSSlider? {
+            if let slider = view as? NSSlider, slider.identifier?.rawValue == "settings.recording-glow" { return slider }
+            return view.subviews.lazy.compactMap { find($0) }.first
+        }
+        return NSApp.windows.first { $0.identifier?.rawValue == "on-air.settings" }?.contentView.flatMap(find)
+    }
+
     private func snapshot(_ controller: PrototypeController) -> [String: Any] {
         let frame = controller.frame(at: ProcessInfo.processInfo.systemUptime, reducedMotion: false)
         let panels = NSApp.windows.filter { NSStringFromClass(type(of: $0)).hasSuffix("OverlayPanel") }
@@ -279,6 +317,8 @@ final class EndToEndBridge {
             "settingsNotesError": settingsModel?.notesError ?? "",
             "settingsSaved": settingsModel?.notesSaved ?? false,
             "settingsGlow": settingsModel?.glow.intensity ?? 0.5,
+            "settingsGlowLabel": glowSlider()?.accessibilityLabel() ?? "",
+            "settingsGlowDescription": glowSlider()?.accessibilityValueDescription() ?? "",
             "settingsVerifying": settingsModel?.verifying ?? false,
             "settingsVerified": settingsModel?.verified ?? false,
             "settingsKeyMask": settingsModel?.maskedKey ?? "",

@@ -24,10 +24,10 @@ The menu bar provides status, **Set up On Air…**, **Settings…**, **Quit On A
 
 ## Settings
 
-The native settings window follows the supplied On Air Settings design: a compact dark window with dictation notes, recording glow, and an OpenAI API key.
+The native settings window follows the supplied On Air Settings design: a compact dark window with dictation notes, glow intensity, and an OpenAI API key.
 
 - **Dictation notes** save automatically on this Mac and supplement the transcription context for both live dictation and retry. Keep them concise (up to 1,000 characters). Oversized edits show an error and preserve the previous usable notes. Changes apply to the next dictation without interrupting a current hold or finalisation.
-- **Recording glow** offers eleven levels from 0 (faint) to 10 (fuller), with the original appearance at 5. The preview uses no microphone. Changes save automatically, apply smoothly during a hold, and respect Reduce Motion; the blue finishing animation stays unchanged.
+- **Glow intensity** offers eleven levels displayed as 0% (faint) to 100% (fuller), with the original appearance at 50%. The preview uses no microphone. Changes save automatically, apply smoothly during a hold, and respect Reduce Motion; the blue finishing animation stays unchanged.
 - **Verify** checks the key against the configured OpenAI transcription session without opening the microphone or sending audio. Only accepted keys are saved to Keychain. Existing stored keys are rechecked when Settings opens; offline/error states do not claim verification.
 - **Show / Hide** reveals only the draft key. A saved key shows its last four characters. **Remove** deletes On Air’s Keychain entry and prevents the legacy `~/.env` fallback from re-importing it; it does not revoke the key at OpenAI or modify `~/.env`.
 
@@ -37,7 +37,7 @@ The signed functional Release build is installed at `/Users/danbarclay/Applicati
 
 ## macOS setup
 
-On first launch, a native setup window follows the supplied On Air Onboarding design. It can be closed at any time and reopened from **Set up On Air…** in the menu bar or the link in Settings.
+On first launch, a native setup window follows the supplied On Air Onboarding design. It can be closed at any time and reopened from **Set up On Air…** in the menu bar.
 
 1. **Microphone** requests the native permission when its switch is clicked. Previously denied access opens Privacy & Security → Microphone; restricted access explains that administrator help is needed.
 2. **Accessibility** opens the relevant privacy pane so you can enable On Air. On macOS 27 this pane is named **Device Control and Data Access**. Accessibility covers both the existing global fn monitor and pasting; On Air does not request separate Input Monitoring access.

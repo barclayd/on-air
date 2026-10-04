@@ -6,12 +6,13 @@ private enum SettingsPalette {
     static let field = Color(red: 20 / 255, green: 19 / 255, blue: 18 / 255)
     static let text = Color(red: 236 / 255, green: 233 / 255, blue: 229 / 255)
     static let secondary = Color(red: 143 / 255, green: 138 / 255, blue: 132 / 255)
+    static let muted = Color(red: 111 / 255, green: 107 / 255, blue: 103 / 255)
+    static let placeholder = Color(red: 95 / 255, green: 91 / 255, blue: 87 / 255)
     static let error = Color(red: 255 / 255, green: 122 / 255, blue: 104 / 255)
 }
 
 struct SettingsView: View {
     @Bindable var model: SettingsModel
-    var openSetup: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -26,10 +27,8 @@ struct SettingsView: View {
                 Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
                 APIKeySettingsSection(model: model)
-                Button("Set up On Air…", action: openSetup)
-                    .buttonStyle(.link).font(.system(size: 12))
             }
-            .padding(.horizontal, 32).padding(.top, 16).padding(.bottom, 32)
+            .padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 32)
         }
         .frame(width: 520)
         .foregroundStyle(SettingsPalette.text)
@@ -74,16 +73,22 @@ private struct RecordingGlowSettingsSection: View {
     @State private var startedAt = ProcessInfo.processInfo.systemUptime
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline) {
-                Text("Recording glow").font(.system(size: 14, weight: .semibold))
+                Text("Glow intensity").font(.system(size: 14, weight: .semibold))
                 Spacer()
-                Text("\(Int((preferences.intensity * GlowIntensity.steps).rounded())) / 10")
+                Text("\(Int((preferences.intensity * 100).rounded()))%")
                     .font(.system(size: 12).monospacedDigit()).foregroundStyle(SettingsPalette.secondary)
                     .accessibilityHidden(true)
             }
-            Text("A softer or fuller glow while you hold fn.")
-                .font(.system(size: 13)).foregroundStyle(SettingsPalette.secondary)
+            GlowIntensityControl(preferences: preferences).frame(height: 22)
+            HStack {
+                Text("Subtle")
+                Spacer()
+                Text("Bright")
+            }
+            .font(.system(size: 12)).foregroundStyle(SettingsPalette.muted)
+            .accessibilityHidden(true)
 
             TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { _ in
                 let now = ProcessInfo.processInfo.systemUptime
@@ -109,20 +114,6 @@ private struct RecordingGlowSettingsSection: View {
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.06)))
             .allowsHitTesting(false).accessibilityHidden(true)
 
-            Slider(value: Binding(get: { preferences.intensity }, set: { preferences.updateIntensity($0) }),
-                   in: 0...1, step: 1 / GlowIntensity.steps)
-                .tint(Color(red: 1, green: 74 / 255, blue: 58 / 255))
-                .accessibilityLabel("Recording glow")
-                .accessibilityValue("\(Int((preferences.intensity * GlowIntensity.steps).rounded())) of 10")
-                .accessibilityHint("Adjusts the red glow’s brightness, height and movement. Zero keeps a faint glow.")
-                .accessibilityIdentifier("settings.recording-glow")
-            HStack {
-                Text("Subtle")
-                Spacer()
-                Text("Expressive")
-            }
-            .font(.system(size: 11)).foregroundStyle(SettingsPalette.secondary)
-            .accessibilityHidden(true)
         }
     }
 }
@@ -163,12 +154,12 @@ struct DictationNotesSettingsSection: View {
                 if model.notes.isEmpty {
                     Text("Use British English and prefer numerals to written-out numbers. I’m a software engineer and often discuss frontend engineering.")
                         .font(.system(size: 14)).lineSpacing(5)
-                        .foregroundStyle(SettingsPalette.secondary.opacity(0.65))
+                        .foregroundStyle(compact ? SettingsPalette.secondary.opacity(0.65) : SettingsPalette.placeholder)
                         .padding(.horizontal, 14).padding(.vertical, 12)
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
-            .frame(height: compact ? 92 : 112)
+            .frame(height: compact ? 92 : 113)
             .background(fieldBackground(focused: focus == .notes, error: model.notesError != nil))
             if let error = model.notesError { errorText(error) }
         }
@@ -180,6 +171,7 @@ struct DictationNotesSettingsSection: View {
     private func hint(_ text: String) -> some View {
         Text(text).font(.system(size: 13)).lineSpacing(3)
             .foregroundStyle(SettingsPalette.secondary).fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 19, alignment: .leading)
     }
     private func errorText(_ text: String) -> some View {
         Text(text).font(.system(size: 12)).foregroundStyle(SettingsPalette.error)
@@ -188,7 +180,7 @@ struct DictationNotesSettingsSection: View {
     private func fieldBackground(focused: Bool, error: Bool = false) -> some View {
         RoundedRectangle(cornerRadius: 10).fill(SettingsPalette.field)
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(error ? SettingsPalette.error.opacity(0.6) : .white.opacity(focused ? 0.22 : 0.08)))
-            .background(RoundedRectangle(cornerRadius: 13).stroke(error ? SettingsPalette.error.opacity(0.1) : .white.opacity(focused ? 0.05 : 0), lineWidth: 6))
+            .background(RoundedRectangle(cornerRadius: compact ? 13 : 10).stroke(error ? SettingsPalette.error.opacity(0.1) : .white.opacity(focused ? 0.05 : 0), lineWidth: compact ? 6 : 8))
     }
 }
 
@@ -216,10 +208,10 @@ struct APIKeySettingsSection: View {
                 Group {
                     if model.showsKey {
                         TextField("OpenAI API key", text: Binding(get: { model.keyDraft }, set: { model.updateKey($0) }),
-                                  prompt: Text("sk-…").foregroundStyle(SettingsPalette.secondary.opacity(0.65)))
+                                  prompt: Text("sk-…").foregroundStyle(compact ? SettingsPalette.secondary.opacity(0.65) : SettingsPalette.placeholder))
                     } else {
                         SecureField("OpenAI API key", text: Binding(get: { model.keyDraft }, set: { model.updateKey($0) }),
-                                    prompt: Text("sk-…").foregroundStyle(SettingsPalette.secondary.opacity(0.65)))
+                                    prompt: Text("sk-…").foregroundStyle(compact ? SettingsPalette.secondary.opacity(0.65) : SettingsPalette.placeholder))
                     }
                 }
                 .textFieldStyle(.plain)
@@ -243,14 +235,14 @@ struct APIKeySettingsSection: View {
             .background(fieldBackground(focused: focus == .key, error: model.keyError != nil))
 
             Button(action: model.verifyDraft) {
-                HStack(spacing: 7) {
+                HStack(spacing: 8) {
                     if model.verifying { ProgressView().controlSize(.mini).tint(SettingsPalette.field) }
                     Text(model.verifying ? "Verifying" : "Verify")
                         .font(.system(size: 13, weight: .medium))
                 }
                 .padding(.horizontal, 16).frame(height: 42)
             }
-            .buttonStyle(VerifySettingsButton(cornerRadius: compact ? 21 : 10))
+            .buttonStyle(VerifySettingsButton(cornerRadius: compact ? 21 : 10, verifying: model.verifying))
             .disabled(!model.canVerify)
             .accessibilityIdentifier("settings.verify")
         }
@@ -261,11 +253,12 @@ struct APIKeySettingsSection: View {
             Image(systemName: "lock").font(.system(size: 13))
                 .foregroundStyle(SettingsPalette.secondary).accessibilityHidden(true)
             Text(key).font(.system(size: 13, design: .monospaced)).tracking(1)
+                .foregroundStyle(Color(red: 207 / 255, green: 202 / 255, blue: 196 / 255))
                 .lineLimit(1).truncationMode(.middle)
                 .accessibilityLabel("Stored API key ending in \(key.suffix(4))")
             Spacer(minLength: 0)
             Button("Remove", action: model.removeKey)
-                .buttonStyle(QuietSettingsButton())
+                .buttonStyle(QuietSettingsButton(remove: true))
                 .accessibilityLabel("Remove API key")
                 .accessibilityIdentifier("settings.remove-key")
         }
@@ -288,7 +281,7 @@ struct APIKeySettingsSection: View {
                         ProgressView().controlSize(.mini)
                         Text("Verifying")
                     } else {
-                        Circle().fill(model.verified ? Color.green : SettingsPalette.secondary).frame(width: 6, height: 6)
+                        Circle().fill(model.verified ? Color(red: 95 / 255, green: 211 / 255, blue: 138 / 255) : SettingsPalette.secondary).frame(width: 6, height: 6)
                         Text(model.verified ? "Verified" : "Saved in Keychain")
                     }
                 }
@@ -304,6 +297,7 @@ struct APIKeySettingsSection: View {
     private func hint(_ text: String) -> some View {
         Text(text).font(.system(size: 13)).lineSpacing(3)
             .foregroundStyle(SettingsPalette.secondary).fixedSize(horizontal: false, vertical: true)
+            .frame(minHeight: 19, alignment: .leading)
     }
     private func errorText(_ text: String) -> some View {
         Text(text).font(.system(size: 12)).foregroundStyle(SettingsPalette.error)
@@ -311,27 +305,32 @@ struct APIKeySettingsSection: View {
     }
     private func fieldBackground(focused: Bool, error: Bool = false) -> some View {
         RoundedRectangle(cornerRadius: 10).fill(SettingsPalette.field)
-            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(error ? SettingsPalette.error.opacity(0.6) : .white.opacity(focused ? 0.22 : 0.08)))
-            .background(RoundedRectangle(cornerRadius: 13).stroke(error ? SettingsPalette.error.opacity(0.1) : .white.opacity(focused ? 0.05 : 0), lineWidth: 6))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(error ? Color(red: 1, green: 106 / 255, blue: 88 / 255).opacity(0.6) : .white.opacity(focused ? 0.22 : 0.08)))
+            .background(RoundedRectangle(cornerRadius: compact ? 13 : 10).stroke(error ? Color(red: 1, green: 90 / 255, blue: 70 / 255).opacity(0.1) : .white.opacity(focused ? 0.05 : 0), lineWidth: compact ? 6 : 8))
     }
 }
 
 private struct QuietSettingsButton: ButtonStyle {
+    var remove = false
+    @State private var hovered = false
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label.font(.system(size: 12)).foregroundStyle(SettingsPalette.secondary)
-            .padding(.horizontal, 10).padding(.vertical, 8)
-            .background(.white.opacity(configuration.isPressed ? 0.08 : 0), in: RoundedRectangle(cornerRadius: 7))
+        configuration.label.font(.system(size: remove ? 13 : 12))
+            .foregroundStyle(hovered ? SettingsPalette.text : remove ? Color(red: 163 / 255, green: 158 / 255, blue: 152 / 255) : SettingsPalette.secondary)
+            .padding(.horizontal, remove ? 10 : 12).padding(.vertical, remove ? 7 : 8)
+            .background(.white.opacity(configuration.isPressed ? 0.08 : remove && hovered ? 0.06 : 0), in: RoundedRectangle(cornerRadius: 7))
             .contentShape(Rectangle())
+            .onHover { hovered = $0 }
     }
 }
 
 private struct VerifySettingsButton: ButtonStyle {
     var cornerRadius: CGFloat = 10
+    var verifying = false
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
-            .foregroundStyle(enabled ? SettingsPalette.field : SettingsPalette.secondary.opacity(0.7))
-            .background(enabled ? SettingsPalette.text.opacity(configuration.isPressed ? 0.8 : 1) : .white.opacity(0.06), in: RoundedRectangle(cornerRadius: cornerRadius))
+            .foregroundStyle(enabled || verifying ? SettingsPalette.field : SettingsPalette.muted)
+            .background(enabled || verifying ? SettingsPalette.text.opacity(configuration.isPressed ? 0.8 : 1) : .white.opacity(0.06), in: RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 
@@ -354,12 +353,19 @@ private struct SettingsWindowChrome: NSViewRepresentable {
 
     final class ChromeView: NSView {
         var onClose: () -> Void = {}
+        private weak var configuredWindow: NSWindow?
         override func viewDidMoveToWindow() {
             super.viewDidMoveToWindow()
             configureWindow()
         }
         func configureWindow() {
             guard let window else { return }
+            if configuredWindow !== window {
+                configuredWindow = window
+                // Start with the reference's neutral field state. Tab still enters
+                // the normal key-view loop; reopening preserves the user's focus.
+                DispatchQueue.main.async { [weak window] in window?.makeFirstResponder(nil) }
+            }
             NotificationCenter.default.removeObserver(self)
             NotificationCenter.default.addObserver(self, selector: #selector(willClose), name: NSWindow.willCloseNotification, object: window)
             window.identifier = NSUserInterfaceItemIdentifier("on-air.settings")

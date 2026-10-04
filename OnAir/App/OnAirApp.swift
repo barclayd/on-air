@@ -14,7 +14,7 @@ struct OnAirApp: App {
                 .accessibilityLabel("On Air — \(delegate.controller.statusText)")
         }
         Settings {
-            SettingsView(model: delegate.settings, openSetup: delegate.showSetup)
+            SettingsView(model: delegate.settings)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
