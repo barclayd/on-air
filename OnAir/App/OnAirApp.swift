@@ -55,7 +55,7 @@ final class OnAirDelegate: NSObject, NSApplicationDelegate {
     lazy var onboarding = bridge.makeOnboarding(settings: settings, controller: controller)
     #else
     let controller = PrototypeController()
-    lazy var settings = SettingsModel(didChange: { [weak self] in self?.controller.settingsDidChange() })
+    lazy var settings = SettingsModel(glow: controller.glow, didChange: { [weak self] in self?.controller.settingsDidChange() })
     lazy var onboarding = OnboardingWindowController(model: OnboardingModel(settings: settings), controller: controller)
     #endif
 

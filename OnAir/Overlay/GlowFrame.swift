@@ -11,6 +11,7 @@ struct GlowFrame: Sendable {
     var opacity: Double = 1
     var reducedMotion: Bool = false
     var motionPhase: Double = 0
+    var intensity: Double = GlowIntensity.defaultValue
 
     static let hidden = GlowFrame(
         time: 0, level: 0, presence: 0, processing: 0,
@@ -25,6 +26,31 @@ struct GlowFrame: Sendable {
     static func easeInOut(_ value: Double) -> Double {
         let t = min(1, max(0, value))
         return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2
+    }
+}
+
+/// Eleven user-facing levels share a normalized 0...1 value. The midpoint is
+/// the original appearance; the upper half deliberately has less headroom.
+struct GlowIntensity {
+    static let defaultValue = 0.5
+    static let steps = 10.0
+    let value: Double
+
+    init(_ value: Double) {
+        self.value = value.isFinite ? min(1, max(0, value)) : Self.defaultValue
+    }
+
+    static func snapped(_ value: Double) -> Double {
+        (GlowIntensity(value).value * steps).rounded() / steps
+    }
+
+    var height: Double { scale(minimum: 0.5, maximum: 1.18) }
+    var brightness: Double { scale(minimum: 0.42, maximum: 1.12) }
+    var movement: Double { scale(minimum: 0.35, maximum: 1.25) }
+
+    private func scale(minimum: Double, maximum: Double) -> Double {
+        value <= 0.5 ? minimum + (1 - minimum) * value * 2
+            : 1 + (maximum - 1) * (value - 0.5) * 2
     }
 }
 

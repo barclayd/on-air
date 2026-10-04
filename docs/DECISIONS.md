@@ -70,3 +70,15 @@ Sources: [OpenAI Realtime transcription](https://developers.openai.com/api/docs/
 - Already-granted permissions are skipped on opening setup. Newly granted permissions advance after 650 ms; explicit key verification advances after 700 ms. Automatic saved-key verification leaves time to review notes before Continue. Returning to notes, closing setup, revoking access, or removing a key cancels pending navigation.
 - Dimensions, colours, controls, SVG paths, and the full canvas sequence follow the HTML. Only its unnecessary third permission row is omitted; the optional notes editor is retained. See [onboarding design fidelity](ONBOARDING-DESIGN.md).
 - Settings and setup share verification without cancelling each other. A completed healthy install launches in menu-bar mode; missing permissions or credentials reopen setup for repair.
+
+## Recording glow control — 4 October 2026
+
+Settings provides eleven integer levels (0–10), persisted as 0–1 in `recordingGlowIntensity`. Zero retains a faint recording cue. Level 5 exactly preserves the approved glow. A small animated preview uses the production renderer without microphone access. The desktop and live onboarding glow share the preference; onboarding’s introductory animation stays as designed.
+
+| Level | Normalized value | Height multiplier | Brightness multiplier | Movement multiplier |
+|---|---|---|---|---|
+| 0 | 0 | 0.50 | 0.42 | 0.35 |
+| 5 | 0.5 | 1.00 | 1.00 | 1.00 |
+| 10 | 1 | 1.18 | 1.12 | 1.25 |
+
+The mapping interpolates linearly on either side of level 5. Limiting the upper half keeps peak voice soft and translucent; minimum brightness and height keep silence visible. All eleven levels were rendered on light and dark backgrounds for tuning. Colour, softness and animation speed retain the original design. Spatial drift and wave height get the movement multiplier. Changes settle over 240 ms from the current displayed value, including if the slider reverses midway. Reduce Motion applies the new level immediately without pulsing. No visual preference reconfigures the transcription connection or alters the blue finishing wave.

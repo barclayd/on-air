@@ -20,6 +20,7 @@ final class EndToEndBridge {
     private var settingsModel: SettingsModel?
     private var onboarding: OnboardingWindowController?
     private lazy var setupSystem = FixtureSetupSystem(input: input)
+    private lazy var glow = GlowPreferences(defaults: UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!)
     var shouldShowOnboarding: Bool { ProcessInfo.processInfo.environment["ON_AIR_E2E_ONBOARDING"] == "1" }
 
     func makeOnboarding(settings: SettingsModel, controller: PrototypeController) -> OnboardingWindowController {
@@ -31,7 +32,7 @@ final class EndToEndBridge {
 
     func makeSettings(controller: PrototypeController) -> SettingsModel {
         let defaults = UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!
-        let model = SettingsModel(defaults: defaults, credentials: settingsCredentials,
+        let model = SettingsModel(defaults: defaults, glow: glow, credentials: settingsCredentials,
             verifier: settingsVerifier, didChange: { [weak controller] in controller?.settingsDidChange() })
         settingsModel = model
         return model
@@ -64,7 +65,8 @@ final class EndToEndBridge {
             microphoneAuthorization: input,
             accessibilityTrusted: { [input] in input.accessibility },
             transcriber: transcription,
-            inserter: insertion
+            inserter: insertion,
+            glow: glow
         )
     }
 
@@ -135,6 +137,7 @@ final class EndToEndBridge {
         case "closeSettings":
             NSApp.windows.first { $0.identifier?.rawValue == "on-air.settings" }?.performClose(nil)
         case "settingsNotes": settingsModel?.updateNotes(command["text"] as? String ?? "")
+        case "settingsGlow": settingsModel?.glow.updateIntensity(command["value"] as? Double ?? 0.5)
         case "settingsKey": settingsModel?.updateKey(command["text"] as? String ?? "")
         case "verifyKey": settingsModel?.verifyDraft()
         case "removeKey": settingsModel?.removeKey()
@@ -243,6 +246,7 @@ final class EndToEndBridge {
             "passedThroughEvents": passedThroughEvents,
             "level": frame.level, "processing": frame.processing, "wave": frame.wavePresence,
             "opacity": frame.opacity, "presence": frame.presence,
+            "glowIntensity": frame.intensity,
             "clipboardChangeCount": NSPasteboard.general.changeCount,
             "frontmostPID": NSWorkspace.shared.frontmostApplication?.processIdentifier ?? -1,
             "accessory": NSApp.activationPolicy() == .accessory,
@@ -274,6 +278,7 @@ final class EndToEndBridge {
             "settingsNotes": settingsModel?.notes ?? "",
             "settingsNotesError": settingsModel?.notesError ?? "",
             "settingsSaved": settingsModel?.notesSaved ?? false,
+            "settingsGlow": settingsModel?.glow.intensity ?? 0.5,
             "settingsVerifying": settingsModel?.verifying ?? false,
             "settingsVerified": settingsModel?.verified ?? false,
             "settingsKeyMask": settingsModel?.maskedKey ?? "",

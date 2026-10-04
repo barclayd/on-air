@@ -24,9 +24,10 @@ The menu bar provides status, **Set up On Air…**, **Settings…**, **Quit On A
 
 ## Settings
 
-The native settings window follows the supplied On Air Settings design: a compact dark window with dictation notes and an OpenAI API key.
+The native settings window follows the supplied On Air Settings design: a compact dark window with dictation notes, recording glow, and an OpenAI API key.
 
 - **Dictation notes** save automatically on this Mac and supplement the transcription context for both live dictation and retry. Keep them concise (up to 1,000 characters). Oversized edits show an error and preserve the previous usable notes. Changes apply to the next dictation without interrupting a current hold or finalisation.
+- **Recording glow** offers eleven levels from 0 (faint) to 10 (fuller), with the original appearance at 5. The preview uses no microphone. Changes save automatically, apply smoothly during a hold, and respect Reduce Motion; the blue finishing animation stays unchanged.
 - **Verify** checks the key against the configured OpenAI transcription session without opening the microphone or sending audio. Only accepted keys are saved to Keychain. Existing stored keys are rechecked when Settings opens; offline/error states do not claim verification.
 - **Show / Hide** reveals only the draft key. A saved key shows its last four characters. **Remove** deletes On Air’s Keychain entry and prevents the legacy `~/.env` fallback from re-importing it; it does not revoke the key at OpenAI or modify `~/.env`.
 

@@ -12,13 +12,17 @@ enum GlowRenderer {
         let t = frame.reducedMotion ? 0 : frame.time
         let mix = frame.processing
         let level = frame.reducedMotion ? 0.22 : frame.level
+        let intensity = GlowIntensity(frame.intensity)
         let pulse = 0.5 + 0.5 * sin(t * 1.7)
         let recordingHeight = (0.09 + level * 0.16) * frame.presence
-        let height = (recordingHeight + (0.075 - recordingHeight) * mix) * h
+        // Keep the original blue endpoint independent of the recording setting,
+        // including rounding that can otherwise change rasterized pixels.
+        let height = (recordingHeight + (0.075 - recordingHeight) * mix
+            + recordingHeight * (intensity.height - 1) * (1 - mix)) * h
             * (0.94 + 0.08 * pulse * (1 - mix))
         let breath = 0.7 + 0.3 * pulse * (1 - 0.6 * mix)
         let alpha = frame.presence * (1 - 0.2 * mix) * frame.opacity
-            * breath * (0.8 + 0.2 * level)
+            * breath * (0.8 + 0.2 * level) * (1 + (intensity.brightness - 1) * (1 - mix))
         let colour = interpolate([240, 40, 34], [70, 140, 255], mix)
         let core = interpolate([255, 104, 72], [130, 180, 255], mix)
         let centre = frame.reducedMotion ? 0.5 : 0.5 + 0.32 * sin(frame.processingTime * 1.8)
@@ -34,8 +38,8 @@ enum GlowRenderer {
             let x = u * (w + padding * 2) - padding
             let screenPosition = min(1, max(0, x / max(1, w)))
             let hump = exp(-pow(u - 0.5, 2) / 0.09)
-            let recording = height * (0.55 + 0.45 * hump + texture.heightBias(at: screenPosition))
-                + height * 0.16 * (0.3 + level)
+            let recording = height * (0.55 + 0.45 * hump + texture.heightBias(at: screenPosition) * intensity.movement)
+                + height * 0.16 * (0.3 + level) * intensity.movement
                 * (sin(u * 6 + t * 1.3) * 0.6 + sin(u * 11 - t * 2.1) * 0.4)
             let envelope = exp(-pow((u - centre) / 0.2, 2))
             let processing = height * (0.6 + 0.9 * envelope)
@@ -71,7 +75,7 @@ enum GlowRenderer {
             let hot = alpha * (0.55 + 0.45 * level * (1 - mix) + 0.2 * mix)
             let edgeStops = (0...8).map { index in
                 let position = Double(index) / 8
-                let gain = 1 + (texture.intensity(at: position) - 1) * (1 - mix)
+                let gain = 1 + (texture.intensity(at: position) - 1) * (1 - mix) * intensity.movement
                 return Gradient.Stop(color: core.opacity(hot * 0.6 * gain), location: position)
             }
             layer.fill(

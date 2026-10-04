@@ -19,6 +19,7 @@ struct OpenAIKeyVerifier: APIKeyVerifying {
 @MainActor
 @Observable
 final class SettingsModel {
+    let glow: GlowPreferences
     private(set) var notes: String
     private(set) var notesSaved = false
     private(set) var notesError: String?
@@ -40,10 +41,12 @@ final class SettingsModel {
     @ObservationIgnored private var notesChangePending = false
 
     init(defaults: UserDefaults = .standard,
+         glow: GlowPreferences? = nil,
          credentials: any CredentialStoring = KeychainCredentials(),
          verifier: any APIKeyVerifying = OpenAIKeyVerifier(),
          didChange: @escaping () -> Void = {}) {
         self.defaults = defaults
+        self.glow = glow ?? GlowPreferences(defaults: defaults)
         self.credentials = credentials
         self.verifier = verifier
         self.didChange = didChange
