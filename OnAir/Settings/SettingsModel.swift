@@ -109,6 +109,9 @@ final class SettingsModel {
     }
 
     func updateKey(_ value: String) {
+        // A field can commit its unchanged value when Verify ends editing.
+        // Only a real edit should invalidate the verification already in flight.
+        guard value != keyDraft else { return }
         cancelVerification()
         keyDraft = value
         keyError = nil

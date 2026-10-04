@@ -19,7 +19,6 @@ struct OnboardingView: View {
     let onDone: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var pulse = false
-    @State private var keyboardHelp = false
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -54,13 +53,6 @@ struct OnboardingView: View {
         .preferredColorScheme(.dark)
         .onChange(of: model.settings.verified) { _, _ in model.reconcile() }
         .onChange(of: model.settings.verifying) { _, _ in model.reconcile() }
-        .onChange(of: model.settings.notesError) { _, _ in model.reconcile() }
-        .onChange(of: model.globeConfirmed) { _, confirmed in if confirmed { keyboardHelp = false } }
-        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
-            if model.step == .permissions && model.showsKeyboardInstructions && !model.globeConfirmed {
-                keyboardHelp = true
-            }
-        }
         .animation(reduceMotion ? nil : .timingCurve(0.25, 0.1, 0.25, 1, duration: 0.5), value: model.step)
     }
 
@@ -99,13 +91,6 @@ struct OnboardingView: View {
                 permissionRow("Accessibility", icon: .clipboard,
                               detail: "Paste your words wherever you’re typing.",
                               enabled: model.accessibility, id: "accessibility", perform: model.enableAccessibility)
-                divider
-                permissionRow("fn / Globe key", icon: .globe, detail: "Set the fn key to Do Nothing.",
-                              enabled: model.globeConfirmed, id: "keyboard") {
-                    model.configureKeyboard()
-                    keyboardHelp = true
-                }
-                .popover(isPresented: $keyboardHelp, arrowEdge: .bottom) { keyboardInstructions }
             }
             .background(SetupStyle.card, in: RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.06)))
@@ -122,21 +107,6 @@ struct OnboardingView: View {
         }
     }
 
-    private var keyboardInstructions: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Set up the fn / Globe key").font(.system(size: 14, weight: .semibold))
-            Text("In Keyboard settings, set “Press fn key to” (or “Press Globe key to”) to “Do Nothing”.")
-                .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
-            Toggle("I’ve set the fn / Globe key to Do Nothing", isOn: Binding(
-                get: { model.globeConfirmed }, set: { model.confirmGlobeSetting($0) }))
-                .toggleStyle(.checkbox).font(.system(size: 12))
-                .accessibilityIdentifier("setup.confirm-keyboard")
-            Text("macOS doesn’t let apps verify this setting automatically.")
-                .font(.system(size: 11)).foregroundStyle(SetupStyle.secondary)
-        }
-        .padding(20).frame(width: 340).preferredColorScheme(.dark)
-    }
-
     private var microphoneDetail: String {
         switch model.microphone {
         case .denied: "Enable On Air in Microphone settings."
@@ -145,12 +115,7 @@ struct OnboardingView: View {
         }
     }
 
-    private var connection: some View {
-        VStack(alignment: .leading, spacing: 22) {
-            DictationNotesSettingsSection(model: model.settings, compact: true, onFocusChange: model.notesFocusChanged)
-            SetupKeySection(model: model)
-        }
-    }
+    private var connection: some View { SetupKeySection(model: model) }
 
     private var divider: some View { Rectangle().fill(.white.opacity(0.06)).frame(height: 1) }
 
@@ -159,7 +124,7 @@ struct OnboardingView: View {
         Toggle(isOn: Binding(get: { enabled }, set: { _ in perform() })) {
             HStack(spacing: 14) {
                 SetupPermissionIcon(kind: icon)
-                    .stroke(style: StrokeStyle(lineWidth: icon == .globe ? 1.13 : 1.275, lineCap: .round, lineJoin: .round))
+                    .stroke(style: StrokeStyle(lineWidth: 1.275, lineCap: .round, lineJoin: .round))
                     .frame(width: 17, height: 17)
                     .foregroundStyle(enabled ? Color(red: 1, green: 122 / 255, blue: 102 / 255) : Color(red: 163 / 255, green: 158 / 255, blue: 152 / 255))
                     .frame(width: 34, height: 34)
@@ -175,7 +140,7 @@ struct OnboardingView: View {
         }
         .toggleStyle(SetupPermissionSwitch()).disabled(disabled)
         .accessibilityLabel(title)
-        .accessibilityHint(id == "keyboard" ? "Open Keyboard settings and confirm Do Nothing." : "Open System Settings to change this permission.")
+        .accessibilityHint("Open System Settings to change this permission.")
         .accessibilityIdentifier("setup.\(id)")
         .padding(.leading, 14).padding(.trailing, 16).padding(.vertical, 16)
     }
@@ -183,7 +148,7 @@ struct OnboardingView: View {
 
 /// The reference's 24-unit SVG strokes, kept as resolution-independent paths.
 private struct SetupPermissionIcon: Shape {
-    enum Kind { case microphone, clipboard, globe }
+    enum Kind { case microphone, clipboard }
     let kind: Kind
 
     func path(in rect: CGRect) -> Path {
@@ -208,10 +173,6 @@ private struct SetupPermissionIcon: Shape {
             path.addLine(to: CGPoint(x: 8, y: 5))
             path.move(to: CGPoint(x: 9, y: 12)); path.addLine(to: CGPoint(x: 15, y: 12))
             path.move(to: CGPoint(x: 9, y: 16)); path.addLine(to: CGPoint(x: 13, y: 16))
-        case .globe:
-            path.addEllipse(in: CGRect(x: 3, y: 3, width: 18, height: 18))
-            path.addEllipse(in: CGRect(x: 8, y: 3, width: 8, height: 18))
-            path.move(to: CGPoint(x: 3, y: 12)); path.addLine(to: CGPoint(x: 21, y: 12))
         }
         return path.applying(CGAffineTransform(scaleX: rect.width / 24, y: rect.height / 24))
     }
@@ -248,11 +209,9 @@ private struct SetupKeySection: View {
     @State private var showsHelp = false
     private var settings: SettingsModel { model.settings }
     private var accepted: Bool { settings.verified && settings.maskedKey != nil }
-    private var advancing: Bool { accepted && model.verificationRequested && !model.editingNotes }
     private var buttonTitle: String {
         if settings.verifying { return "Verifying" }
-        if advancing { return "Verified" }
-        if accepted { return "Continue" }
+        if accepted { return "Verified" }
         return settings.maskedKey == nil ? "Verify" : "Try again"
     }
 
@@ -278,8 +237,8 @@ private struct SetupKeySection: View {
                     }
                     .font(.system(size: 13, weight: .medium)).padding(.horizontal, 22).frame(height: 40)
                 }
-                .buttonStyle(SetupKeyButton(verified: advancing))
-                .disabled(settings.verifying || advancing || (accepted ? settings.notesError != nil : settings.maskedKey == nil && !settings.canVerify))
+                .buttonStyle(SetupKeyButton(verified: accepted))
+                .disabled(settings.verifying || accepted || (settings.maskedKey == nil && !settings.canVerify))
                 .accessibilityIdentifier("settings.verify")
             }
             Text(settings.keyError ?? "Stored in your Mac’s Keychain. Used only to transcribe your voice.")
@@ -290,10 +249,7 @@ private struct SetupKeySection: View {
     }
 
     private func verify() {
-        // AppKit buttons do not resign a TextEditor automatically. Explicit Verify
-        // ends editing; returning to notes during verification pauses navigation.
         NSApp.keyWindow?.makeFirstResponder(nil)
-        model.notesFocusChanged(false)
         model.verifyConnection()
     }
 

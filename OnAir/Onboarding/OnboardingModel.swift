@@ -4,12 +4,11 @@ import Observation
 @preconcurrency import ApplicationServices
 
 enum SetupPane: String {
-    case microphone, accessibility, keyboard
+    case microphone, accessibility
 
     var settingsTitle: String {
         switch self {
         case .microphone: "Microphone"
-        case .keyboard: "Keyboard"
         case .accessibility:
             if #available(macOS 27.0, *) { "Device Control and Data Access" }
             else { "Accessibility" }
@@ -20,7 +19,6 @@ enum SetupPane: String {
         let destination = switch self {
         case .microphone: "com.apple.preference.security?Privacy_Microphone"
         case .accessibility: "com.apple.preference.security?Privacy_Accessibility"
-        case .keyboard: "com.apple.Keyboard-Settings.extension"
         }
         return URL(string: "x-apple.systempreferences:\(destination)")!
     }
@@ -54,20 +52,15 @@ struct MacSetupSystemAccess: SetupSystemAccess {
 final class OnboardingModel {
     enum Step: String { case permissions, connection, ready }
     static let completionKey = "onboarding.completed.v1"
-    static let globeConfirmationKey = "onboarding.globeConfirmed.v1"
 
     let settings: SettingsModel
     private(set) var step: Step = .permissions
     private(set) var microphone: AVAuthorizationStatus = .notDetermined
     private(set) var accessibility = false
     private(set) var requestingMicrophone = false
-    private(set) var globeConfirmed: Bool
-    private(set) var showsKeyboardInstructions = false
     private(set) var showsAccessibilityInstructions = false
     private(set) var notice: String?
     private(set) var completed: Bool
-    private(set) var verificationRequested = false
-    private(set) var editingNotes = false
     @ObservationIgnored private let system: any SetupSystemAccess
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var poll: Timer?
@@ -80,15 +73,14 @@ final class OnboardingModel {
         self.settings = settings
         self.system = system
         self.defaults = defaults
-        globeConfirmed = defaults.bool(forKey: Self.globeConfirmationKey)
         completed = defaults.bool(forKey: Self.completionKey)
         refresh()
     }
 
-    var permissionsReady: Bool { microphone == .authorized && accessibility && globeConfirmed }
+    var permissionsReady: Bool { microphone == .authorized && accessibility }
     var ready: Bool {
         permissionsReady && settings.verified && settings.maskedKey != nil &&
-        !settings.verifying && settings.notesError == nil
+        !settings.verifying
     }
     var shouldPresentOnLaunch: Bool { !completed || !permissionsReady || !settings.hasSavedKey }
 
@@ -96,7 +88,7 @@ final class OnboardingModel {
         presented = true
         settings.present(owner: "onboarding")
         refresh()
-        if completed && permissionsReady { step = .connection }
+        if permissionsReady && step == .permissions { step = .connection }
         reconcile()
         guard poll == nil else { return }
         // Poll only while setup is open, including while System Settings is frontmost.
@@ -110,8 +102,6 @@ final class OnboardingModel {
 
     func disappear() {
         presented = false
-        verificationRequested = false
-        editingNotes = false
         cancelTransition()
         poll?.invalidate()
         poll = nil
@@ -127,14 +117,12 @@ final class OnboardingModel {
     func reconcile() {
         if step != .permissions && !permissionsReady {
             step = .permissions
-            verificationRequested = false
         }
         if step == .ready && !ready {
             step = .connection
-            verificationRequested = false
         }
         let target: Step? = if presented && step == .permissions && permissionsReady { .connection }
-            else if presented && step == .connection && ready && verificationRequested && !editingNotes { .ready }
+            else if presented && step == .connection && ready { .ready }
             else { nil }
         guard target != transitionTarget else { return }
         cancelTransition()
@@ -149,19 +137,11 @@ final class OnboardingModel {
         }
     }
 
-    func notesFocusChanged(_ focused: Bool) {
-        editingNotes = focused
-        reconcile()
-    }
-
-    /// Only an explicit Verify starts automatic completion. A stored key must
-    /// leave the notes screen available for review when setup is reopened.
     func verifyConnection() {
         guard step == .connection else { return }
         if settings.verified && settings.maskedKey != nil {
             continueSetup()
         } else {
-            verificationRequested = true
             if settings.maskedKey != nil { settings.retryStoredVerification() }
             else { settings.verifyDraft() }
             reconcile()
@@ -205,25 +185,11 @@ final class OnboardingModel {
         refresh()
     }
 
-    func configureKeyboard() {
-        showsKeyboardInstructions = true
-        open(.keyboard)
-    }
-
-    func confirmGlobeSetting(_ confirmed: Bool) {
-        // macOS has no public API for this preference. Keep this user confirmation
-        // distinct from the permissions we can verify with system APIs.
-        globeConfirmed = confirmed
-        defaults.set(confirmed, forKey: Self.globeConfirmationKey)
-        reconcile()
-    }
-
     func continueSetup() {
         refresh()
         switch step {
         case .permissions:
             guard permissionsReady else { return }
-            // Even an existing verified key must not skip the notes/review screen.
             cancelTransition()
             step = .connection
         case .connection:
@@ -233,12 +199,6 @@ final class OnboardingModel {
             step = .ready
         case .ready: break
         }
-    }
-
-    func back() {
-        cancelTransition()
-        verificationRequested = false
-        step = .permissions
     }
 
     @discardableResult func finish() -> Bool {
@@ -253,7 +213,7 @@ final class OnboardingModel {
     private func open(_ pane: SetupPane) {
         notice = nil
         if !system.open(pane) {
-            notice = "Couldn’t open System Settings. Open it from the Apple menu, then choose \(pane == .keyboard ? pane.settingsTitle : "Privacy & Security → " + pane.settingsTitle)."
+            notice = "Couldn’t open System Settings. Open it from the Apple menu, then choose Privacy & Security → \(pane.settingsTitle)."
         }
     }
 }
