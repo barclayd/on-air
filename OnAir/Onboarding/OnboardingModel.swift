@@ -69,7 +69,7 @@ final class OnboardingModel {
     @ObservationIgnored private var promptedAccessibility = false
     @ObservationIgnored private var transition: Task<Void, Never>?
     @ObservationIgnored private var transitionTarget: Step?
-    @ObservationIgnored private var presented = false
+    private(set) var isPresented = false
 
     init(settings: SettingsModel, system: any SetupSystemAccess = MacSetupSystemAccess(), defaults: UserDefaults = .standard) {
         self.settings = settings
@@ -87,7 +87,7 @@ final class OnboardingModel {
     var shouldPresentOnLaunch: Bool { !completed || !permissionsReady || !settings.hasSavedKey }
 
     func appear() {
-        presented = true
+        isPresented = true
         settings.present(owner: "onboarding")
         refresh()
         if permissionsReady { step = .connection }
@@ -103,7 +103,7 @@ final class OnboardingModel {
     }
 
     func disappear() {
-        presented = false
+        isPresented = false
         verificationRequested = false
         editingNotes = false
         cancelTransition()
@@ -127,8 +127,8 @@ final class OnboardingModel {
             step = .connection
             verificationRequested = false
         }
-        let target: Step? = if presented && step == .permissions && permissionsReady { .connection }
-            else if presented && step == .connection && ready && verificationRequested && !editingNotes { .ready }
+        let target: Step? = if isPresented && step == .permissions && permissionsReady { .connection }
+            else if isPresented && step == .connection && ready && verificationRequested && !editingNotes { .ready }
             else { nil }
         guard target != transitionTarget else { return }
         cancelTransition()
@@ -136,7 +136,7 @@ final class OnboardingModel {
         transitionTarget = target
         transition = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(target == .connection ? 650 : 700)) } catch { return }
-            guard let self, self.presented, self.transitionTarget == target else { return }
+            guard let self, self.isPresented, self.transitionTarget == target else { return }
             self.refresh()
             guard self.transitionTarget == target else { return }
             self.continueSetup()

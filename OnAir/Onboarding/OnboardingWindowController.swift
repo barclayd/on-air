@@ -4,9 +4,11 @@ import SwiftUI
 @MainActor
 final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
     let model: OnboardingModel
+    private let controller: PrototypeController
 
-    init(model: OnboardingModel) {
+    init(model: OnboardingModel, controller: PrototypeController) {
         self.model = model
+        self.controller = controller
         super.init(window: nil)
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
@@ -24,7 +26,7 @@ final class OnboardingWindowController: NSWindowController, NSWindowDelegate {
             window.isMovableByWindowBackground = true
             window.isReleasedWhenClosed = false
             window.delegate = self
-            let content = NSHostingView(rootView: OnboardingView(model: model, onDone: { [weak self] in
+            let content = NSHostingView(rootView: OnboardingView(model: model, controller: controller, onDone: { [weak self] in
                 guard let self, self.model.finish() else { return }
                 self.close()
             }))

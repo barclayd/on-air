@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **45 application E2E tests and one visual regression test comparing twelve images**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes about two minutes on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **49 application E2E tests and one visual regression test comparing twelve images**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes a few minutes on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -87,7 +87,9 @@ Onboarding checks in `Tools/OnboardingChecks.swift` cover essential-permissions 
 
 Seven onboarding app-process tests exercise production windows, permission polling, the full setup-to-dictation flow, failure recovery, saved notes/key preservation, automatic saved-key reuse, optional notes persistence and validation, and returning to notes during verification. Regression assertions retain the 540 × 500 window and image proportions. Captures include the two essential permission rows, notes and key entry/errors, Settings, and the ready state. They are visual inspection evidence, not pixel baselines. Tests use isolated preferences and fake OS/network boundaries.
 
-For a focused run: `Tools/test.sh --filter OnboardingE2ETests`. First-launch presentation is opt-in for the fixture so unrelated dictation tests retain their isolated starting state. The `ON_AIR_E2E_OPEN_SETTINGS=1` fixture flag is reserved for a manual navigation smoke test; it allows clicking setup's buttons to open real System Settings panes, but still never requests or grants real permissions. Automated runs do not set it.
+Four additional `OnboardingAnimationE2ETests` inspect actual ready-window pixels while exercising fn press/release, microphone-energy changes, waveform width, return to idle, Reduce Motion, shortcut and sleep cancellation, and closing/reopening during a hold. They verify that the ready screen does not add capture or transcription sessions. The fixture’s `ON_AIR_E2E_REDUCE_MOTION` override is compiled out of normal builds.
+
+For a focused run: `Tools/test.sh --filter Onboarding`. First-launch presentation is opt-in for the fixture so unrelated dictation tests retain their isolated starting state. The `ON_AIR_E2E_OPEN_SETTINGS=1` fixture flag is reserved for a manual navigation smoke test; it allows clicking setup's buttons to open real System Settings panes, but still never requests or grants real permissions. Automated runs do not set it.
 
 The permission controls were manually verified on macOS 27 to open Microphone and Device Control and Data Access. The form was also exercised through native controls with a fake offline key; no real permissions or credentials were changed.
 

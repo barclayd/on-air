@@ -52,11 +52,11 @@ final class OnAirDelegate: NSObject, NSApplicationDelegate {
     private let bridge = EndToEndBridge()
     lazy var controller = bridge.makeController()
     lazy var settings = bridge.makeSettings(controller: controller)
-    lazy var onboarding = bridge.makeOnboarding(settings: settings)
+    lazy var onboarding = bridge.makeOnboarding(settings: settings, controller: controller)
     #else
     let controller = PrototypeController()
     lazy var settings = SettingsModel(didChange: { [weak self] in self?.controller.settingsDidChange() })
-    lazy var onboarding = OnboardingWindowController(model: OnboardingModel(settings: settings))
+    lazy var onboarding = OnboardingWindowController(model: OnboardingModel(settings: settings), controller: controller)
     #endif
 
     func showSetup() { onboarding.present() }
