@@ -22,7 +22,7 @@ struct SettingsView: View {
                 Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
                 APIKeySettingsSection(model: model)
-                Button("Set up permissions and fn key…", action: openSetup)
+                Button("Set up On Air…", action: openSetup)
                     .buttonStyle(.link).font(.system(size: 12))
             }
             .padding(.horizontal, 32).padding(.top, 16).padding(.bottom, 32)
@@ -64,10 +64,11 @@ struct SettingsView: View {
     }
 }
 
-/// Optional dictation preferences live in Settings and persist immediately.
+/// Onboarding and Settings edit the same immediately persisted optional notes.
 struct DictationNotesSettingsSection: View {
     @Bindable var model: SettingsModel
     var compact = false
+    var onFocusChange: (Bool) -> Void = { _ in }
     @FocusState private var focus: Field?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private enum Field { case notes }
@@ -109,6 +110,7 @@ struct DictationNotesSettingsSection: View {
             if let error = model.notesError { errorText(error) }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.notesSaved)
+        .onChange(of: focus) { _, value in onFocusChange(value == .notes) }
     }
 
     private func heading(_ text: String) -> some View { Text(text).font(.system(size: 14, weight: .semibold)) }

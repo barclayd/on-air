@@ -105,29 +105,32 @@ final class OnboardingE2ETests: XCTestCase {
         XCTAssertEqual(failed.number("starts"), 0)
     }
 
-    func testSavedNotesAndKeyArePreservedWithoutRequiringAdditionalSetupTasks() throws {
+    func testOnboardingNotesPersistInSettingsAndSavedKeyLeavesTimeToReview() throws {
         app = try AppDriver(test: name, onboarding: true)
         let initial = try app.wait("already-granted permissions skip to the key") { ($0.raw["setupStep"] as? String) == "connection" }
         XCTAssertEqual(initial.number("permissionRequests"), 0)
         XCTAssertEqual(initial.number("setupAccessibilityRequests"), 0)
         XCTAssertEqual(initial.raw["setupOpenedPanes"] as? [String], [])
         let notes = "Use British spelling. Write HubSpot.\nCafé 👩🏽‍💻"
-        try app.send("openSettings")
         try app.send("settingsNotes", ["text": notes])
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
         try app.send("setupVerify")
         let verified = try app.wait("verified key") { $0.bool("settingsVerified") }
-        try app.wait("verification advances without notes confirmation") { ($0.raw["setupStep"] as? String) == "ready" }
+        try app.wait("verification advances with saved notes") { ($0.raw["setupStep"] as? String) == "ready" }
         try app.send("setupDone")
+        try app.send("openSettings")
         XCTAssertEqual(try app.send("snapshot").raw["settingsNotes"] as? String, notes)
         try app.send("renderSettings")
         try app.send("closeSettings")
 
         try app.send("openSetup")
-        let reopened = try app.wait("saved key proceeds automatically") { ($0.raw["setupStep"] as? String) == "ready" }
+        let reopened = try app.wait("saved key is verified on the notes screen") { $0.bool("settingsVerified") }
+        try app.remains("saved key leaves time to review optional notes", for: 1) { ($0.raw["setupStep"] as? String) == "connection" }
+        try capture("saved-notes")
         XCTAssertEqual(reopened.raw["settingsNotes"] as? String, notes)
         XCTAssertEqual(reopened.raw["settingsKeyMask"] as? String, verified.raw["settingsKeyMask"] as? String)
         XCTAssertEqual(reopened.raw["setupOpenedPanes"] as? [String], [])
+        try app.send("setupVerify")
         try app.send("setupDone")
         try app.send("openSettings")
         try app.send("settingsNotes", ["text": ""])
@@ -137,17 +140,21 @@ final class OnboardingE2ETests: XCTestCase {
         XCTAssertEqual(try app.send("snapshot").number("starts"), 0)
     }
 
-    func testInvalidOptionalSettingsCannotBlockOnboardingOrFirstDictation() throws {
+    func testOptionalNotesCanBeClearedAfterValidationAndFirstDictationStillWorks() throws {
         app = try AppDriver(test: name, onboarding: true)
         try app.wait("key setup") { ($0.raw["setupStep"] as? String) == "connection" }
-        try app.send("openSettings")
         try app.send("settingsNotes", ["text": "Use British spelling."])
         try app.send("settingsNotes", ["text": String(repeating: "x", count: 1_001)])
         let invalid = try app.send("snapshot")
         XCTAssertFalse((invalid.raw["settingsNotesError"] as? String ?? "").isEmpty)
         try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
         try app.send("setupVerify")
-        let ready = try app.wait("optional settings do not gate readiness") { ($0.raw["setupStep"] as? String) == "ready" }
+        try app.wait("key verified despite invalid notes") { $0.bool("settingsVerified") }
+        try app.remains("invalid edit stays visible for correction", for: 1) { ($0.raw["setupStep"] as? String) == "connection" && !$0.bool("setupReady") }
+        try capture("notes-error")
+        try app.send("settingsNotes", ["text": ""])
+        try app.send("setupVerify")
+        let ready = try app.wait("empty optional notes allow completion") { ($0.raw["setupStep"] as? String) == "ready" }
         XCTAssertTrue(ready.bool("setupReady"))
         try app.send("setupDone")
         XCTAssertTrue(try app.send("snapshot").bool("setupCompleted"))
@@ -160,6 +167,27 @@ final class OnboardingE2ETests: XCTestCase {
         try app.up()
         let pasted = try app.wait("first result") { $0.idle && $0.number("pasteCount") == 1 }
         XCTAssertEqual(pasted.raw["pastedText"] as? String, "Ready to dictate.")
+    }
+
+    func testReturningToNotesDuringVerificationCancelsAutomaticNavigation() throws {
+        app = try AppDriver(test: name, onboarding: true)
+        try app.wait("notes and key setup") { ($0.raw["setupStep"] as? String) == "connection" }
+        try app.send("settingsKey", ["text": "sk-fixture-valid-settings-key"])
+        try app.send("setupVerify")
+        try app.send("setupNotesFocus", ["focused": true])
+        let notes = "Use British English and prefer numerals."
+        try app.send("settingsNotes", ["text": notes])
+        try app.wait("key verifies while notes are being edited") { $0.bool("settingsVerified") }
+        try app.remains("verification must not dismiss the editor", for: 1) { ($0.raw["setupStep"] as? String) == "connection" }
+        try app.send("setupNotesFocus", ["focused": false])
+        try app.remains("leaving the editor does not unexpectedly finish setup", for: 0.8) { ($0.raw["setupStep"] as? String) == "connection" }
+        try app.send("setupVerify")
+        try app.wait("explicit Continue finishes editing") { ($0.raw["setupStep"] as? String) == "ready" }
+        try app.send("setupDone")
+        try app.send("openSettings")
+        let saved = try app.send("snapshot")
+        XCTAssertEqual(saved.raw["settingsNotes"] as? String, notes)
+        XCTAssertEqual(saved.number("starts"), 0)
     }
 
     private func capture(_ name: String) throws {

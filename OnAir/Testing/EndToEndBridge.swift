@@ -117,6 +117,7 @@ final class EndToEndBridge {
         case "setupAccessibility": onboarding?.model.enableAccessibility()
         case "setupContinue": onboarding?.model.continueSetup()
         case "setupVerify": onboarding?.model.verifyConnection()
+        case "setupNotesFocus": onboarding?.model.notesFocusChanged(command["focused"] as? Bool ?? false)
         case "setupDone":
             if onboarding?.model.finish() == true { onboarding?.close() }
         case "setupOpenFailure": setupSystem.opensSuccessfully = false

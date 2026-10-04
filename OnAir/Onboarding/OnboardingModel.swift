@@ -61,6 +61,8 @@ final class OnboardingModel {
     private(set) var showsAccessibilityInstructions = false
     private(set) var notice: String?
     private(set) var completed: Bool
+    private(set) var verificationRequested = false
+    private(set) var editingNotes = false
     @ObservationIgnored private let system: any SetupSystemAccess
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var poll: Timer?
@@ -80,7 +82,7 @@ final class OnboardingModel {
     var permissionsReady: Bool { microphone == .authorized && accessibility }
     var ready: Bool {
         permissionsReady && settings.verified && settings.maskedKey != nil &&
-        !settings.verifying
+        !settings.verifying && settings.notesError == nil
     }
     var shouldPresentOnLaunch: Bool { !completed || !permissionsReady || !settings.hasSavedKey }
 
@@ -88,7 +90,7 @@ final class OnboardingModel {
         presented = true
         settings.present(owner: "onboarding")
         refresh()
-        if permissionsReady && step == .permissions { step = .connection }
+        if permissionsReady { step = .connection }
         reconcile()
         guard poll == nil else { return }
         // Poll only while setup is open, including while System Settings is frontmost.
@@ -102,6 +104,8 @@ final class OnboardingModel {
 
     func disappear() {
         presented = false
+        verificationRequested = false
+        editingNotes = false
         cancelTransition()
         poll?.invalidate()
         poll = nil
@@ -117,12 +121,14 @@ final class OnboardingModel {
     func reconcile() {
         if step != .permissions && !permissionsReady {
             step = .permissions
+            verificationRequested = false
         }
         if step == .ready && !ready {
             step = .connection
+            verificationRequested = false
         }
         let target: Step? = if presented && step == .permissions && permissionsReady { .connection }
-            else if presented && step == .connection && ready { .ready }
+            else if presented && step == .connection && ready && verificationRequested && !editingNotes { .ready }
             else { nil }
         guard target != transitionTarget else { return }
         cancelTransition()
@@ -137,11 +143,22 @@ final class OnboardingModel {
         }
     }
 
+    func notesFocusChanged(_ focused: Bool) {
+        editingNotes = focused
+        // Returning to notes cancels automatic completion, even if verification
+        // finishes while typing. Continue remains available when editing is done.
+        if focused { verificationRequested = false }
+        reconcile()
+    }
+
+    /// A saved key is checked automatically but leaves the optional notes visible.
+    /// Only an explicit Verify starts automatic completion for a newly checked key.
     func verifyConnection() {
         guard step == .connection else { return }
         if settings.verified && settings.maskedKey != nil {
             continueSetup()
         } else {
+            verificationRequested = true
             if settings.maskedKey != nil { settings.retryStoredVerification() }
             else { settings.verifyDraft() }
             reconcile()
@@ -190,6 +207,7 @@ final class OnboardingModel {
         switch step {
         case .permissions:
             guard permissionsReady else { return }
+            // Reusing permissions must still give the user a chance to edit notes.
             cancelTransition()
             step = .connection
         case .connection:

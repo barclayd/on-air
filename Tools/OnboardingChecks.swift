@@ -54,7 +54,7 @@ enum OnboardingChecks {
         try await wait { !settings.verifying }
         model.refresh()
         try check(model.step == .connection && model.ready && !model.completed,
-                  "Verification displays confirmation before automatically advancing")
+                  "A verified key allows continuing without requiring notes")
         let notes = "Use British spelling. Write HubSpot.\nCafé 👩🏽‍💻"
         settings.updateNotes(notes)
         let beforeContinue = changes
@@ -72,9 +72,11 @@ enum OnboardingChecks {
         try check(model.step == .connection, "Restored permissions allow credential checking")
         settings.updateNotes(String(repeating: "x", count: DictationPreferences.notesLimit + 1))
         model.continueSetup()
-        try check(model.step == .ready && model.ready,
-                  "Invalid optional edits in Settings cannot block essential setup")
+        try check(model.step == .connection && !model.ready,
+                  "An oversized optional edit stays visible for correction before completion")
         try check(defaults.string(forKey: DictationPreferences.notesKey) == notes, "Invalid notes preserve the previous saved value")
+        settings.updateNotes("")
+        try check(model.ready, "Blank optional notes never prevent completion")
         settings.updateNotes(notes)
         model.continueSetup()
         try check(model.finish() && defaults.bool(forKey: OnboardingModel.completionKey), "Persist successful completion")
@@ -82,12 +84,15 @@ enum OnboardingChecks {
         // Recreate both models and read through a fresh defaults instance, as at launch.
         let restoredSettings = SettingsModel(defaults: UserDefaults(suiteName: suite)!, credentials: credentials, verifier: Verifier())
         let reopened = OnboardingModel(settings: restoredSettings, system: system, defaults: defaults)
-        try check(restoredSettings.notes == notes, "Setup must preserve notes saved in Settings")
+        try check(restoredSettings.notes == notes, "Onboarding notes must persist into Settings and subsequent launches")
         reopened.appear()
         try await wait { !restoredSettings.verifying }
         try check(restoredSettings.verified && restoredSettings.maskedKey == settings.maskedKey,
                   "The stored key is reused, masked, and verified on reopen")
-        try await wait { reopened.step == .ready }
+        try await Task.sleep(for: .milliseconds(800))
+        try check(reopened.step == .connection, "A stored key leaves the notes available for review")
+        reopened.verifyConnection()
+        try check(reopened.step == .ready, "Continue accepts the already-verified key")
         try check(system.panes.allSatisfy { $0 == .microphone || $0 == .accessibility },
                   "Setup only opens essential permission panes")
         restoredSettings.updateNotes("")
@@ -120,7 +125,7 @@ enum OnboardingChecks {
         try check(settings.keyDraft.isEmpty && !settings.showsKey, "Final close clears sensitive presentation state")
         try await automaticTransitions()
         try await legacyKeyboardPreferenceIsIrrelevant()
-        print("PASS: essential-only onboarding, permission/key validation, legacy preference independence, optional Settings isolation, navigation cancellation, and shared window lifecycle")
+        print("PASS: essential permissions, optional notes persistence and validation, saved-key review, navigation cancellation, legacy preference independence, and shared window lifecycle")
     }
 
     private static func automaticTransitions() async throws {
@@ -167,8 +172,11 @@ enum OnboardingChecks {
         try await Task.sleep(for: .milliseconds(800))
         try check(model.step == .connection && !model.completed, "Closing during verification confirmation cancels navigation")
         model.appear()
-        try await wait { model.step == .ready }
-        try check(model.finish(), "An existing verified key advances without an extra confirmation")
+        try await wait { settings.verified }
+        try await Task.sleep(for: .milliseconds(800))
+        try check(model.step == .connection, "Reopening never skips optional notes")
+        model.verifyConnection()
+        try check(model.finish(), "Continue uses the already-verified key")
     }
 
     private static func legacyKeyboardPreferenceIsIrrelevant() async throws {
@@ -188,11 +196,12 @@ enum OnboardingChecks {
             let model = OnboardingModel(settings: settings, system: system, defaults: defaults)
             model.appear()
             defer { model.disappear() }
-            try await wait { model.step == .ready }
+            try await wait { settings.verified }
+            model.verifyConnection()
             try check(model.finish() && !model.shouldPresentOnLaunch,
                       "Absent, false, or true legacy fn confirmation must not gate setup or healthy launches")
             try check(system.requests.isEmpty && system.accessibilityRequests == 0 && system.panes.isEmpty,
-                      "Existing permissions and credentials require no additional setup tasks")
+                      "Existing permissions and credentials do not request additional system setup")
         }
     }
 

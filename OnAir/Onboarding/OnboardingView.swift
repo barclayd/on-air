@@ -53,6 +53,7 @@ struct OnboardingView: View {
         .preferredColorScheme(.dark)
         .onChange(of: model.settings.verified) { _, _ in model.reconcile() }
         .onChange(of: model.settings.verifying) { _, _ in model.reconcile() }
+        .onChange(of: model.settings.notesError) { _, _ in model.reconcile() }
         .animation(reduceMotion ? nil : .timingCurve(0.25, 0.1, 0.25, 1, duration: 0.5), value: model.step)
     }
 
@@ -115,7 +116,12 @@ struct OnboardingView: View {
         }
     }
 
-    private var connection: some View { SetupKeySection(model: model) }
+    private var connection: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            DictationNotesSettingsSection(model: model.settings, compact: true, onFocusChange: model.notesFocusChanged)
+            SetupKeySection(model: model)
+        }
+    }
 
     private var divider: some View { Rectangle().fill(.white.opacity(0.06)).frame(height: 1) }
 
@@ -209,9 +215,11 @@ private struct SetupKeySection: View {
     @State private var showsHelp = false
     private var settings: SettingsModel { model.settings }
     private var accepted: Bool { settings.verified && settings.maskedKey != nil }
+    private var advancing: Bool { model.ready && model.verificationRequested && !model.editingNotes }
     private var buttonTitle: String {
         if settings.verifying { return "Verifying" }
-        if accepted { return "Verified" }
+        if advancing { return "Verified" }
+        if accepted { return "Continue" }
         return settings.maskedKey == nil ? "Verify" : "Try again"
     }
 
@@ -237,8 +245,8 @@ private struct SetupKeySection: View {
                     }
                     .font(.system(size: 13, weight: .medium)).padding(.horizontal, 22).frame(height: 40)
                 }
-                .buttonStyle(SetupKeyButton(verified: accepted))
-                .disabled(settings.verifying || accepted || (settings.maskedKey == nil && !settings.canVerify))
+                .buttonStyle(SetupKeyButton(verified: advancing))
+                .disabled(settings.verifying || advancing || (accepted ? settings.notesError != nil : settings.maskedKey == nil && !settings.canVerify))
                 .accessibilityIdentifier("settings.verify")
             }
             Text(settings.keyError ?? "Stored in your Mac’s Keychain. Used only to transcribe your voice.")
@@ -250,6 +258,7 @@ private struct SetupKeySection: View {
 
     private func verify() {
         NSApp.keyWindow?.makeFirstResponder(nil)
+        model.notesFocusChanged(false)
         model.verifyConnection()
     }
 
