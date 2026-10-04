@@ -8,7 +8,7 @@ struct RenderPreview {
         let destination = URL(fileURLWithPath: CommandLine.arguments.dropFirst().first ?? ".build/previews")
         try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
 
-        let variants: [(String, GlowFrame)] = [
+        var variants: [(String, GlowFrame)] = [
             ("recording", GlowFrame(time: 5.5, level: 0.6, presence: 1, processing: 0, wavePresence: 0, processingTime: 0)),
             ("recording-alternate", GlowFrame(time: 5.5, level: 0.6, presence: 1, processing: 0, wavePresence: 0, processingTime: 0, motionPhase: .pi)),
             ("processing", GlowFrame(time: 9.7, level: 0, presence: 1, processing: 1, wavePresence: 1, processingTime: 1.2)),
@@ -16,6 +16,24 @@ struct RenderPreview {
             ("reduced-motion", GlowFrame(time: 0, level: 0, presence: 1, processing: 1, wavePresence: 1, processingTime: 0, reducedMotion: true)),
             ("reduced-recording", GlowFrame(time: 12, level: 0.9, presence: 1, processing: 0, wavePresence: 0, processingTime: 0, reducedMotion: true, motionPhase: 2.4)),
         ]
+        if CommandLine.arguments.contains("--glow-scale") {
+            variants = (0...10).flatMap { step in
+                let intensity = Double(step) / 10
+                return [
+                    ("glow-\(step)-quiet", GlowFrame(time: 4, level: 0, presence: 1, processing: 0, wavePresence: 0, processingTime: 0, intensity: intensity)),
+                    ("glow-\(step)-voice", GlowFrame(time: 5.5, level: 0.6, presence: 1, processing: 0, wavePresence: 0, processingTime: 0, intensity: intensity)),
+                    ("glow-\(step)-peak", GlowFrame(time: 1, level: 1, presence: 1, processing: 0, wavePresence: 0, processingTime: 0, intensity: intensity)),
+                    ("glow-\(step)-processing", GlowFrame(time: 9.7, level: 0, presence: 1, processing: 1, wavePresence: 1, processingTime: 1.2, intensity: intensity)),
+                ]
+            }
+            for time in [0.0, 20.0] {
+                for step in [0, 10] {
+                    variants.append(("glow-\(step)-reduced-\(Int(time))", GlowFrame(time: time, level: time / 20,
+                        presence: 1, processing: 0, wavePresence: 0, processingTime: 0,
+                        reducedMotion: true, motionPhase: time, intensity: Double(step) / 10)))
+                }
+            }
+        }
         for (name, frame) in variants {
             for (theme, background) in [("dark", Color(red: 0.10, green: 0.098, blue: 0.094)), ("light", Color(red: 0.96, green: 0.95, blue: 0.94))] {
                 let view = ZStack {

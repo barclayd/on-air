@@ -7,6 +7,7 @@ import OSLog
 @MainActor
 @Observable
 final class PrototypeController {
+    let glow: GlowPreferences
     private enum Phase { case idle, listening, processing, fading }
     private var phase: Phase = .idle
     private var startedAt = 0.0
@@ -43,7 +44,9 @@ final class PrototypeController {
          microphoneAuthorization: any MicrophoneAuthorizing = SystemMicrophoneAuthorization(),
          accessibilityTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
          transcriber: any Transcribing = OpenAITranscriber(),
-         inserter: any TranscriptInserting = TranscriptInserter()) {
+         inserter: any TranscriptInserting = TranscriptInserter(),
+         glow: GlowPreferences = GlowPreferences()) {
+        self.glow = glow
         self.keys = keys
         self.meter = meter
         self.microphoneAuthorization = microphoneAuthorization
@@ -292,7 +295,8 @@ final class PrototypeController {
         let opacity = phase == .fading ? 1 - GlowFrame.easeInOut((now - fadeAt) / (discarded ? 0.18 : 0.7)) : 1
         return GlowFrame(time: elapsed, level: level, presence: presence, processing: processing,
             wavePresence: wave, processingTime: releaseTime, opacity: opacity, reducedMotion: reducedMotion,
-            motionPhase: recordingMotionPhase)
+            motionPhase: recordingMotionPhase,
+            intensity: glow.displayedIntensity(at: now, reducedMotion: reducedMotion))
     }
 
     @objc private func suspend() {

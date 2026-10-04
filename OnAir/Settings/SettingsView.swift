@@ -21,6 +21,10 @@ struct SettingsView: View {
 
                 Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
+                RecordingGlowSettingsSection(preferences: model.glow)
+
+                Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+
                 APIKeySettingsSection(model: model)
                 Button("Set up On Air…", action: openSetup)
                     .buttonStyle(.link).font(.system(size: 12))
@@ -61,6 +65,65 @@ struct SettingsView: View {
                 .foregroundStyle(Color(red: 189 / 255, green: 184 / 255, blue: 178 / 255))
         }
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct RecordingGlowSettingsSection: View {
+    let preferences: GlowPreferences
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var startedAt = ProcessInfo.processInfo.systemUptime
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Recording glow").font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Text("\(Int((preferences.intensity * GlowIntensity.steps).rounded())) / 10")
+                    .font(.system(size: 12).monospacedDigit()).foregroundStyle(SettingsPalette.secondary)
+                    .accessibilityHidden(true)
+            }
+            Text("A softer or fuller glow while you hold fn.")
+                .font(.system(size: 13)).foregroundStyle(SettingsPalette.secondary)
+
+            TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion)) { _ in
+                let now = ProcessInfo.processInfo.systemUptime
+                let time = reduceMotion ? 0 : now - startedAt
+                let frame = GlowFrame(time: time, level: 0.4 + 0.2 * sin(time * 2.4),
+                    presence: 1, processing: 0, wavePresence: 0, processingTime: 0,
+                    reducedMotion: reduceMotion,
+                    intensity: preferences.displayedIntensity(at: now, reducedMotion: reduceMotion))
+                Canvas { context, size in
+                    // Show the bottom of a miniature display using the actual overlay renderer.
+                    let height = size.width * 0.625
+                    var canvas = context
+                    canvas.translateBy(x: 0, y: size.height - height)
+                    GlowRenderer.draw(in: canvas, size: CGSize(width: size.width, height: height), frame: frame)
+                }
+            }
+            .frame(height: 82)
+            .background(SettingsPalette.field)
+            .overlay(alignment: .topLeading) {
+                Text("Preview").font(.system(size: 10)).foregroundStyle(SettingsPalette.secondary.opacity(0.7)).padding(10)
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.white.opacity(0.06)))
+            .allowsHitTesting(false).accessibilityHidden(true)
+
+            Slider(value: Binding(get: { preferences.intensity }, set: { preferences.updateIntensity($0) }),
+                   in: 0...1, step: 1 / GlowIntensity.steps)
+                .tint(Color(red: 1, green: 74 / 255, blue: 58 / 255))
+                .accessibilityLabel("Recording glow")
+                .accessibilityValue("\(Int((preferences.intensity * GlowIntensity.steps).rounded())) of 10")
+                .accessibilityHint("Adjusts the red glow’s brightness, height and movement. Zero keeps a faint glow.")
+                .accessibilityIdentifier("settings.recording-glow")
+            HStack {
+                Text("Subtle")
+                Spacer()
+                Text("Expressive")
+            }
+            .font(.system(size: 11)).foregroundStyle(SettingsPalette.secondary)
+            .accessibilityHidden(true)
+        }
     }
 }
 

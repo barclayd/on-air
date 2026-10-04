@@ -82,4 +82,30 @@ final class SettingsE2ETests: XCTestCase {
         XCTAssertEqual(complete.number("starts"), 1)
         XCTAssertEqual(complete.number("transcriptionCancels"), holding.number("transcriptionCancels") + 1)
     }
+
+    func testGlowPersistsAndUpdatesAnActiveHoldWithoutInterruptingDictation() throws {
+        let initial = try launchAndOpen()
+        XCTAssertEqual(initial.number("settingsGlow"), 0.5)
+        try app.send("settingsGlow", ["value": 0.2])
+        try app.send("closeSettings")
+        try app.send("openSettings")
+        let reopened = try app.send("snapshot")
+        XCTAssertEqual(reopened.number("settingsGlow"), 0.2)
+        XCTAssertEqual(reopened.number("starts"), 0, "The preview never records audio")
+        XCTAssertEqual(reopened.number("transcriptionCancels"), initial.number("transcriptionCancels"))
+        try app.send("transcription", ["delay": 0.4, "text": "Keep this dictation intact."])
+        try app.down()
+        let quiet = try app.wait("subtle recording glow") { $0.bool("meterRunning") && abs($0.number("glowIntensity") - 0.2) < 0.001 }
+        try app.send("settingsGlow", ["value": 1.0])
+        let full = try app.wait("full recording glow") { abs($0.number("glowIntensity") - 1) < 0.001 }
+        XCTAssertTrue(full.bool("listening"))
+        XCTAssertEqual(full.number("starts"), 1)
+        XCTAssertEqual(full.number("transcriptionBegins"), quiet.number("transcriptionBegins"))
+        XCTAssertEqual(full.number("transcriptionCancels"), quiet.number("transcriptionCancels"))
+        try app.up()
+        _ = try app.wait("blue finishing wave") { $0.number("processing") > 0.99 && $0.number("wave") > 0.99 }
+        let complete = try app.wait("dictation pasted") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(complete.raw["pastedText"] as? String, "Keep this dictation intact.")
+        XCTAssertEqual(complete.number("transcriptionCancels"), initial.number("transcriptionCancels"))
+    }
 }

@@ -340,7 +340,8 @@ private struct SetupCompletionView: View {
                 time: 0, level: 0, presence: controller.isListening ? 1 : 0,
                 processing: controller.isTranscribing ? 1 : 0,
                 wavePresence: controller.isTranscribing ? 1 : 0, processingTime: 0,
-                opacity: controller.isVisible ? 1 : 0, reducedMotion: true
+                opacity: controller.isVisible ? 1 : 0, reducedMotion: true,
+                intensity: controller.glow.intensity
             ) : controller.frame(at: ProcessInfo.processInfo.systemUptime, reducedMotion: false)
             ZStack(alignment: .top) {
                 Canvas { context, size in SetupCompletionRenderer.draw(in: &context, size: size, time: time, liveFrame: frame) }
@@ -404,18 +405,19 @@ private enum SetupCompletionRenderer {
         let width = size.width, height = size.height
         let live = t >= 5.6
         let reduced = liveFrame.reducedMotion
+        let intensity = GlowIntensity(live ? liveFrame.intensity : GlowIntensity.defaultValue)
         let heat = live ? liveFrame.presence * (1 - liveFrame.processing) * liveFrame.opacity : 0
         let wave = live ? liveFrame.wavePresence * liveFrame.opacity : 0
         let clock = live ? (reduced ? 0 : liveFrame.time) : t
         let mix = live ? (heat + wave > 0.001 ? wave / (heat + wave) : 1) : progress(t, 1.9, 2.7)
-        let alpha = live ? max(heat * 0.85, wave * 0.45) : progress(t, 0.3, 0.9) * (1 - progress(t, 2.6, 3.5))
+        let alpha = live ? max(heat * 0.85 * intensity.brightness, wave * 0.45) : progress(t, 0.3, 0.9) * (1 - progress(t, 2.6, 3.5))
         let syllable = pow(max(0, sin(t * 8.5 + 2 * sin(t * 1.7))), 0.6)
         let dynamics = 0.55 + 0.45 * sin(t * 1.9 + sin(t * 0.7) * 3)
         let level = live ? (reduced ? 0 : liveFrame.level) : min(1, syllable * dynamics * 0.9) * (1 - progress(t, 1.7, 2)) * progress(t, 0.5, 0.9)
         let center = live ? 0.5 : 0.5 + 0.3 * sin(max(0, t - 1.9) * 1.8) * (1 - progress(t, 3.3, 4))
         if alpha > 0.003 {
             let pulse = 0.5 + 0.5 * sin(clock * 1.7)
-            let h = ((0.16 + level * 0.18) * (1 - mix) + 0.09 * mix) * height * (0.94 + 0.08 * pulse * (1 - mix))
+            let h = ((0.16 + level * 0.18) * intensity.height * (1 - mix) + 0.09 * mix) * height * (0.94 + 0.08 * pulse * (1 - mix))
             let strength = alpha * (0.7 + 0.3 * pulse) * (0.8 + 0.2 * level)
             let color = Color(red: (240 - 170 * mix) / 255, green: (40 + 100 * mix) / 255, blue: (34 + 221 * mix) / 255)
             let warm = Color(red: (255 - 125 * mix) / 255, green: (104 + 76 * mix) / 255, blue: (72 + 183 * mix) / 255)
@@ -425,7 +427,7 @@ private enum SetupCompletionRenderer {
                 let u = Double(i) / 40
                 let hump = exp(-pow(u - 0.5, 2) / 0.09)
                 let variation = sin(u * 6 + clock * 1.3) * 0.6 + sin(u * 11 - clock * 2.1) * 0.4
-                let red = h * (0.55 + 0.45 * hump) + h * 0.16 * (0.3 + level) * variation
+                let red = h * (0.55 + 0.45 * hump) + h * 0.16 * (0.3 + level) * variation * intensity.movement
                 let envelope = exp(-pow((u - center) / 0.2, 2))
                 path.addLine(to: CGPoint(x: u * width, y: height - (red * (1 - mix) + h * (0.6 + 0.9 * envelope) * mix)))
             }
@@ -479,7 +481,7 @@ private enum SetupCompletionRenderer {
         let stroke = Color(red: (225 + 30 * heat) / 255, green: (238 - 128 * heat) / 255, blue: (255 - 165 * heat) / 255)
         let shadow = Color(red: (90 + 165 * heat) / 255, green: (150 - 76 * heat) / 255, blue: (255 - 197 * heat) / 255)
         let pulse = reduced ? 0 : 0.5 + 0.5 * sin(clock * 3.2)
-        let blur = 12 + 10 * morph + heat * (8 + 14 * pulse + 22 * level)
+        let blur = 12 + 10 * morph + heat * (8 + (14 * pulse + 22 * level) * intensity.movement)
         context.addFilter(.shadow(color: shadow.opacity(0.9 * lineAlpha), radius: blur))
         let shading: GraphicsContext.Shading = move > 0.98 ? .color(stroke.opacity(lineAlpha)) : .linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: width, y: 0))
         context.stroke(line, with: shading, style: StrokeStyle(lineWidth: 1.6 + 1.6 * morph + heat * (0.5 + 1.4 * level), lineCap: .round, lineJoin: .round))

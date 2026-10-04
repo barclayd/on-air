@@ -13,6 +13,25 @@ enum SettingsChecks {
         func check(_ condition: @autoclosure () -> Bool, _ message: String) throws {
             guard condition() else { throw Failure(message: message) }
         }
+        try check(model.glow.intensity == 0.5, "Existing users keep the original glow")
+        model.glow.updateIntensity(0.83, at: 100)
+        try check(model.glow.intensity == 0.8, "Glow has eleven evenly selectable levels")
+        try check(defaults.double(forKey: GlowPreferences.intensityKey) == 0.8, "Glow saves immediately")
+        try check(GlowPreferences(defaults: defaults).intensity == 0.8, "Glow survives a new model/app launch")
+        try check(model.glow.displayedIntensity(at: 100) == 0.5, "Changes start at the current appearance without a jump")
+        let midway = model.glow.displayedIntensity(at: 100.12)
+        try check(midway > 0.5 && midway < 0.8, "Appearance interpolates while recording")
+        model.glow.updateIntensity(0.1, at: 100.12)
+        try check(model.glow.displayedIntensity(at: 100.12) == midway, "Reversing the slider preserves continuity")
+        try check(model.glow.displayedIntensity(at: 100.12, reducedMotion: true) == 0.1, "Reduce Motion skips interpolation")
+        try check(abs(model.glow.displayedIntensity(at: 101) - 0.1) < 0.0001, "Appearance settles at the selection")
+        try check(changes == 0 && verifier.calls == 0, "Glow must never reconfigure or verify transcription")
+        for (saved, expected) in [(-1.0, 0.0), (2.0, 1.0), (0.76, 0.8), (Double.nan, 0.5), (Double.infinity, 0.5)] {
+            defaults.set(saved, forKey: GlowPreferences.intensityKey)
+            try check(GlowPreferences(defaults: defaults).intensity == expected, "Invalid or old preferences normalize safely")
+        }
+        defaults.set("invalid", forKey: GlowPreferences.intensityKey)
+        try check(GlowPreferences(defaults: defaults).intensity == 0.5, "Non-numeric preferences use the default")
         model.appear()
         try check(model.maskedKey == nil && !model.verifying && verifier.calls == 0, "Empty settings must not verify a nonexistent key")
         let notesModel = SettingsModel(defaults: defaults, credentials: store, verifier: verifier)
