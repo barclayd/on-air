@@ -308,9 +308,9 @@ private struct SetupKeySection: View {
             } else {
                 Group {
                     if settings.showsKey {
-                        TextField("OpenAI API key", text: Binding(get: { settings.keyDraft }, set: settings.updateKey), prompt: Text("sk-…").foregroundStyle(SetupStyle.muted))
+                        TextField("OpenAI API key", text: Binding(get: { settings.keyDraft }, set: { settings.updateKey($0) }), prompt: Text("sk-…").foregroundStyle(SetupStyle.muted))
                     } else {
-                        SecureField("OpenAI API key", text: Binding(get: { settings.keyDraft }, set: settings.updateKey), prompt: Text("sk-…").foregroundStyle(SetupStyle.muted))
+                        SecureField("OpenAI API key", text: Binding(get: { settings.keyDraft }, set: { settings.updateKey($0) }), prompt: Text("sk-…").foregroundStyle(SetupStyle.muted))
                     }
                 }
                 .textFieldStyle(.plain).font(.system(size: 13, design: .monospaced)).padding(.leading, 14)
