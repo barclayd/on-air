@@ -81,7 +81,10 @@ final class OnboardingModel {
     }
 
     var permissionsReady: Bool { microphone == .authorized && accessibility && globeConfirmed }
-    var ready: Bool { permissionsReady && settings.verified && settings.maskedKey != nil && !settings.verifying }
+    var ready: Bool {
+        permissionsReady && settings.verified && settings.maskedKey != nil &&
+        !settings.verifying && settings.notesError == nil
+    }
     var shouldPresentOnLaunch: Bool { !completed || !permissionsReady || !settings.hasSavedKey }
 
     func appear() {
@@ -114,7 +117,6 @@ final class OnboardingModel {
     func reconcile() {
         if step != .permissions && !permissionsReady { step = .permissions }
         if step == .ready && !ready { step = .connection }
-        if step == .connection && ready { step = .ready }
     }
 
     func enableMicrophone() {
@@ -163,8 +165,17 @@ final class OnboardingModel {
 
     func continueSetup() {
         refresh()
-        guard permissionsReady else { return }
-        step = ready ? .ready : .connection
+        switch step {
+        case .permissions:
+            guard permissionsReady else { return }
+            // Even an existing verified key must not skip the notes/review screen.
+            step = .connection
+        case .connection:
+            guard ready else { return }
+            settings.flushPendingNotesChanges()
+            step = .ready
+        case .ready: break
+        }
     }
 
     func back() { step = .permissions }
@@ -172,6 +183,7 @@ final class OnboardingModel {
     @discardableResult func finish() -> Bool {
         refresh()
         guard step == .ready, ready else { return false }
+        settings.flushPendingNotesChanges()
         completed = true
         defaults.set(true, forKey: Self.completionKey)
         return true

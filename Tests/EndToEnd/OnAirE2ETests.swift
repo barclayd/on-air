@@ -328,7 +328,7 @@ final class OnAirE2ETests: XCTestCase {
 
     func testCompletedTranscriptIsPastedExactlyOnceAfterRelease() throws {
         try launch()
-        try app.send("transcription", ["delay": 0.6, "text": "AnyVan needs the ALM report."])
+        try app.send("transcription", ["delay": 0.6, "text": "The team needs the ALM report."])
         try startHold()
         try app.wait("settled hold") { $0.number("presence") > 0.9 }
         XCTAssertEqual(app.last?.number("pasteCount"), 0)
@@ -336,7 +336,7 @@ final class OnAirE2ETests: XCTestCase {
         try app.up()
         try app.remains("Never paste before completion", for: 0.25) { $0.number("pasteCount") == 0 && !$0.bool("meterRunning") }
         let final = try app.wait("completed transcript pasted") { $0.number("pasteCount") == 1 }
-        XCTAssertEqual(final.raw["pastedText"] as? String, "AnyVan needs the ALM report.")
+        XCTAssertEqual(final.raw["pastedText"] as? String, "The team needs the ALM report.")
         XCTAssertGreaterThan(final.number("transcriptionBytes"), 4_800)
         try app.wait("finished") { $0.idle }
         XCTAssertEqual(app.last?.number("pasteCount"), 1)

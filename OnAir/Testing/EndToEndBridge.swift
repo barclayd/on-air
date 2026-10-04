@@ -272,6 +272,7 @@ final class EndToEndBridge {
             "settingsCommand": settingsCommand(in: NSApp.mainMenu) != nil,
             "settingsWindows": NSApp.windows.filter { $0.identifier?.rawValue == "on-air.settings" && $0.isVisible }.map(\.windowNumber),
             "settingsNotes": settingsModel?.notes ?? "",
+            "settingsNotesError": settingsModel?.notesError ?? "",
             "settingsSaved": settingsModel?.notesSaved ?? false,
             "settingsVerifying": settingsModel?.verifying ?? false,
             "settingsVerified": settingsModel?.verified ?? false,

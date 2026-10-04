@@ -16,7 +16,7 @@ enum SettingsChecks {
         model.appear()
         try check(model.maskedKey == nil && !model.verifying && verifier.calls == 0, "Empty settings must not verify a nonexistent key")
         let notesModel = SettingsModel(defaults: defaults, credentials: store, verifier: verifier)
-        let notes = "Use British spelling. Write HubSpot. Café 👩🏽‍💻\nKeep AnyVan."
+        let notes = "Use British spelling. Write HubSpot. Café 👩🏽‍💻\nKeep API uppercase."
         notesModel.updateNotes(notes)
         try check(defaults.string(forKey: DictationPreferences.notesKey) == notes, "Notes must persist before the debounce")
         let reopened = SettingsModel(defaults: defaults, credentials: store, verifier: verifier)

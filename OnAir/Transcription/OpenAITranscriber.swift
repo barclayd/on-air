@@ -90,7 +90,7 @@ final class OpenAITranscriber: Transcribing {
                     "type": "session.update", "session": ["type": "transcription", "audio": ["input": [
                         "format": ["type": "audio/pcm", "rate": 24_000],
                         "transcription": ["model": "gpt-live-transcribe", "languages": ["en"],
-                            "keywords": ["AnyVan", "ALM"], "delay": "low",
+                            "keywords": ["ALM"], "delay": "low",
                             "prompt": prompt],
                         "turn_detection": NSNull(),
                     ]]],
@@ -303,7 +303,7 @@ enum FileTranscription {
                            prompt: String = DictationPreferences.basePrompt) async throws -> String {
         let boundary = UUID().uuidString
         var body = Data()
-        for (name, value) in [("model", "gpt-transcribe"), ("languages[]", "en"), ("keywords[]", "AnyVan"),
+        for (name, value) in [("model", "gpt-transcribe"), ("languages[]", "en"),
                               ("keywords[]", "ALM"), ("prompt", prompt)] {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }

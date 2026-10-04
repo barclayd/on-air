@@ -13,42 +13,11 @@ struct SettingsView: View {
     @Bindable var model: SettingsModel
     var openSetup: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @FocusState private var focus: Field?
-    private enum Field { case notes }
 
     var body: some View {
         VStack(spacing: 0) {
             VStack(alignment: .leading, spacing: 30) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(alignment: .firstTextBaseline) {
-                        heading("Dictation notes")
-                        Spacer()
-                        Text("Saved").font(.system(size: 12))
-                            .foregroundStyle(SettingsPalette.secondary)
-                            .opacity(model.notesSaved ? 1 : 0)
-                            .accessibilityHidden(!model.notesSaved)
-                    }
-                    hint("Names, jargon or style On Air should know about.")
-                    ZStack(alignment: .topLeading) {
-                        TextEditor(text: Binding(get: { model.notes }, set: { model.updateNotes($0) }))
-                            .font(.system(size: 14)).lineSpacing(5)
-                            .scrollContentBackground(.hidden)
-                            .focused($focus, equals: .notes)
-                            .padding(.horizontal, 9).padding(.vertical, 10)
-                            .accessibilityLabel("Dictation notes")
-                            .accessibilityIdentifier("settings.notes")
-                        if model.notes.isEmpty {
-                            Text("Use British spelling. Write HubSpot, not Hubspot.")
-                                .font(.system(size: 14)).lineSpacing(5)
-                                .foregroundStyle(SettingsPalette.secondary.opacity(0.65))
-                                .padding(.horizontal, 14).padding(.vertical, 12)
-                                .allowsHitTesting(false).accessibilityHidden(true)
-                        }
-                    }
-                    .frame(height: 112)
-                    .background(fieldBackground(focused: focus == .notes, error: model.notesError != nil))
-                    if let error = model.notesError { errorText(error) }
-                }
+                DictationNotesSettingsSection(model: model)
 
                 Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
@@ -93,6 +62,52 @@ struct SettingsView: View {
         }
         .accessibilityElement(children: .combine)
     }
+}
+
+/// Both onboarding and Settings edit the same immediately persisted preference.
+struct DictationNotesSettingsSection: View {
+    @Bindable var model: SettingsModel
+    var compact = false
+    @FocusState private var focus: Field?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    private enum Field { case notes }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                heading("Dictation notes")
+                if compact {
+                    Text("Optional").font(.system(size: 12)).foregroundStyle(SettingsPalette.secondary)
+                }
+                Spacer()
+                Text("Saved").font(.system(size: 12))
+                    .foregroundStyle(SettingsPalette.secondary)
+                    .opacity(model.notesSaved ? 1 : 0)
+                    .accessibilityHidden(!model.notesSaved)
+            }
+            if !compact { hint("Names, jargon or style On Air should know about.") }
+            ZStack(alignment: .topLeading) {
+                TextEditor(text: Binding(get: { model.notes }, set: { model.updateNotes($0) }))
+                    .font(.system(size: 14)).lineSpacing(5)
+                    .scrollContentBackground(.hidden)
+                    .focused($focus, equals: .notes)
+                    .padding(.horizontal, 9).padding(.vertical, 10)
+                    .accessibilityLabel("Dictation notes")
+                    .accessibilityIdentifier("settings.notes")
+                if model.notes.isEmpty {
+                    Text("Use British English and prefer numerals to written-out numbers. I’m a software engineer and often discuss frontend engineering.")
+                        .font(.system(size: 14)).lineSpacing(5)
+                        .foregroundStyle(SettingsPalette.secondary.opacity(0.65))
+                        .padding(.horizontal, 14).padding(.vertical, 12)
+                        .allowsHitTesting(false).accessibilityHidden(true)
+                }
+            }
+            .frame(height: compact ? 90 : 112)
+            .background(fieldBackground(focused: focus == .notes, error: model.notesError != nil))
+            if let error = model.notesError { errorText(error) }
+        }
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.notesSaved)
+    }
 
     private func heading(_ text: String) -> some View { Text(text).font(.system(size: 14, weight: .semibold)) }
     private func hint(_ text: String) -> some View {
@@ -112,12 +127,13 @@ struct SettingsView: View {
 
 struct APIKeySettingsSection: View {
     @Bindable var model: SettingsModel
+    var compact = false
     @FocusState private var focus: Field?
     private enum Field { case key }
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             heading("OpenAI API key")
-            hint("Used only to transcribe your voice. Stored in your Mac’s Keychain.")
+            if !compact { hint("Used only to transcribe your voice. Stored in your Mac’s Keychain.") }
             if let key = model.maskedKey {
                 storedKey(key)
             } else {
@@ -167,7 +183,7 @@ struct APIKeySettingsSection: View {
                 }
                 .padding(.horizontal, 16).frame(height: 42)
             }
-            .buttonStyle(VerifySettingsButton())
+            .buttonStyle(VerifySettingsButton(cornerRadius: compact ? 21 : 10))
             .disabled(!model.canVerify)
             .accessibilityIdentifier("settings.verify")
         }
@@ -243,11 +259,12 @@ private struct QuietSettingsButton: ButtonStyle {
 }
 
 private struct VerifySettingsButton: ButtonStyle {
+    var cornerRadius: CGFloat = 10
     @Environment(\.isEnabled) private var enabled
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .foregroundStyle(enabled ? SettingsPalette.field : SettingsPalette.secondary.opacity(0.7))
-            .background(enabled ? SettingsPalette.text.opacity(configuration.isPressed ? 0.8 : 1) : .white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+            .background(enabled ? SettingsPalette.text.opacity(configuration.isPressed ? 0.8 : 1) : .white.opacity(0.06), in: RoundedRectangle(cornerRadius: cornerRadius))
     }
 }
 

@@ -2,7 +2,7 @@
 
 A native macOS dictation app with the visual design from the supplied On Air film. Hold **fn / Globe**, speak, and release. A red glow responds to your voice; a blue waveform appears while OpenAI finishes the transcript, then the completed text is pasted into the original input field.
 
-Audio streams to `gpt-live-transcribe` while fn is held, using low delay, English, and the hints **AnyVan** and **ALM**. There is no separate AI rewrite step. Failed recordings can be retried with `gpt-transcribe`. Audio is held only in memory, never written to disk.
+Audio streams to `gpt-live-transcribe` while fn is held, using low delay, English, and the hint **ALM**. There is no separate AI rewrite step. Failed recordings can be retried with `gpt-transcribe`. Audio is held only in memory, never written to disk.
 
 A local Swift rule formats clear dotted version numbers before insertion or Copy: **one dot two dot six → 1.2.6**. It requires at least three numeric components and a spoken “dot”, supports mixed words/digits and English number words through 999, and preserves surrounding text. Two-component phrases and unsupported/ambiguous number components stay unchanged. No additional API call is made.
 
@@ -41,9 +41,9 @@ On first launch, a native setup window follows the supplied On Air Onboarding de
 1. **Microphone** requests the native permission on Allow. Previously denied access opens Privacy & Security → Microphone; restricted access explains that administrator help is needed.
 2. **Accessibility** opens the relevant privacy pane so you can enable On Air. On macOS 27 this pane is named **Device Control and Data Access**. Accessibility covers both the existing global fn monitor and pasting; On Air does not request separate Input Monitoring access.
 3. **fn / Globe** opens Keyboard settings. Choose **Do Nothing**, then confirm that choice in setup. This is explicitly labelled as user confirmation: macOS has no public API for automatically checking this preference, and On Air does not write undocumented system preferences.
-4. **OpenAI key** uses the same key entry, actual transcription-session verification, and Keychain storage as Settings. There is no recording or audio transmission during verification.
+4. **Dictation notes and OpenAI key** share the same fields and saved values as Settings. Optional notes save immediately; the key is saved in Keychain only after actual transcription-session verification. There is no recording or audio transmission during verification. Continue remains available after verification so you can finish editing notes before moving on, including when using an existing key.
 
-Permission rows reflect live macOS status, including changes made while System Settings is frontmost. A click, a return to the app, or a cached permission callback never counts as a grant. **Done** rechecks permissions and requires a verified saved key. The red/blue/checkmark finish is decorative; only fn can start recording. Reduce Motion shows a static checkmark.
+Permission rows reflect live macOS status, including changes made while System Settings is frontmost. A click, a return to the app, or a cached permission callback never counts as a grant. **Done** rechecks permissions and requires a verified saved key and valid notes. Saved notes are applied before the ready screen, without waiting for the normal editing debounce. The red/blue/checkmark finish is decorative; only fn can start recording. Reduce Motion shows a static checkmark.
 
 Completed setup is remembered. Subsequent launches reopen setup if a required permission or stored key is missing. Both setup and Settings can remain open without one closing the other's application menu or cancelling its key verification. System Settings links include manual navigation guidance if opening fails.
 
@@ -77,7 +77,7 @@ Each release includes a versioned DMG and an identical `On-Air.dmg` for the webs
 Tools/test.sh
 ```
 
-Runs 42 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for onboarding, settings, credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes first-launch setup, permission denial/revocation, key-gated readiness, shared-window lifecycle, native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 44 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for onboarding, settings, credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes first-launch setup, permission denial/revocation, key-gated readiness, notes/key persistence between setup and Settings, immediate configuration before first dictation, shared-window lifecycle, native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 
