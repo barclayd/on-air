@@ -22,9 +22,9 @@ final class EndToEndBridge {
     private lazy var setupSystem = FixtureSetupSystem(input: input)
     var shouldShowOnboarding: Bool { ProcessInfo.processInfo.environment["ON_AIR_E2E_ONBOARDING"] == "1" }
 
-    func makeOnboarding(settings: SettingsModel) -> OnboardingWindowController {
+    func makeOnboarding(settings: SettingsModel, controller: PrototypeController) -> OnboardingWindowController {
         let defaults = UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!
-        let window = OnboardingWindowController(model: OnboardingModel(settings: settings, system: setupSystem, defaults: defaults))
+        let window = OnboardingWindowController(model: OnboardingModel(settings: settings, system: setupSystem, defaults: defaults), controller: controller)
         onboarding = window
         return window
     }

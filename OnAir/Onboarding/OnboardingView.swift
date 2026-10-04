@@ -16,15 +16,22 @@ private enum SetupStyle {
 
 struct OnboardingView: View {
     @Bindable var model: OnboardingModel
+    let controller: PrototypeController
     let onDone: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool {
+        #if E2E_TESTING
+        if let value = ProcessInfo.processInfo.environment["ON_AIR_E2E_REDUCE_MOTION"] { return value == "1" }
+        #endif
+        return systemReduceMotion
+    }
     @State private var pulse = false
 
     var body: some View {
         ZStack(alignment: .top) {
             SetupStyle.background
-            if model.step == .ready {
-                SetupCompletionView(reducedMotion: reduceMotion, onDone: onDone)
+            if model.step == .ready && model.isPresented {
+                SetupCompletionView(controller: controller, reducedMotion: reduceMotion, onDone: onDone)
             }
             VStack(spacing: 28) {
                 if model.step != .ready {
@@ -317,28 +324,38 @@ private struct SetupKeyButton: ButtonStyle {
 }
 
 private struct SetupCompletionView: View {
+    let controller: PrototypeController
     let reducedMotion: Bool
     let onDone: () -> Void
     @State private var start = Date()
     @State private var finished = false
 
     var body: some View {
-        TimelineView(.animation(minimumInterval: 1 / 60, paused: finished || reducedMotion)) { timeline in
+        TimelineView(.animation(minimumInterval: 1 / 60, paused: reducedMotion || (finished && !controller.isVisible))) { timeline in
             let time = reducedMotion || finished ? 6 : max(0, timeline.date.timeIntervalSince(start))
             let reveal = SetupCompletionRenderer.progress(time, 4.8, 5.5)
+            // Observe the same capture cycle as the desktop overlay. This view never
+            // starts a microphone, consumes a key, or opens a second transcription.
+            let frame = reducedMotion ? GlowFrame(
+                time: 0, level: 0, presence: controller.isListening ? 1 : 0,
+                processing: controller.isTranscribing ? 1 : 0,
+                wavePresence: controller.isTranscribing ? 1 : 0, processingTime: 0,
+                opacity: controller.isVisible ? 1 : 0, reducedMotion: true
+            ) : controller.frame(at: ProcessInfo.processInfo.systemUptime, reducedMotion: false)
             ZStack(alignment: .top) {
-                Canvas { context, size in SetupCompletionRenderer.draw(in: &context, size: size, time: time) }
+                Canvas { context, size in SetupCompletionRenderer.draw(in: &context, size: size, time: time, liveFrame: frame) }
                     .accessibilityHidden(true).allowsHitTesting(false)
                 VStack(spacing: 10) {
                     Text("You’re On Air.").font(.system(size: 26, weight: .semibold)).tracking(-0.52).frame(height: 31)
                     HStack(spacing: 10) {
                         Text("Hold")
-                        keycap
+                        keycap(pressed: controller.isListening)
                         Text("anywhere and start talking.")
                     }
                     .font(.system(size: 14)).foregroundStyle(SetupStyle.secondary).padding(.top, 4)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel("Hold the fn or Globe key anywhere and start talking. Release to paste.")
+                    .accessibilityValue(controller.isListening ? "Listening" : controller.isTranscribing ? "Transcribing" : "Ready")
                     Button(action: onDone) {
                         Text("Done").font(.system(size: 13, weight: .medium))
                             .padding(.horizontal, 22).padding(.vertical, 9)
@@ -357,34 +374,47 @@ private struct SetupCompletionView: View {
         }
     }
 
-    private var keycap: some View {
+    private func keycap(pressed: Bool) -> some View {
         ZStack(alignment: .topTrailing) {
             RoundedRectangle(cornerRadius: 9).fill(Color(red: 217 / 255, green: 214 / 255, blue: 207 / 255))
-            RoundedRectangle(cornerRadius: 6).fill(Color(red: 29 / 255, green: 29 / 255, blue: 31 / 255)).padding(3)
+            RoundedRectangle(cornerRadius: 6).fill(pressed ? Color(red: 14 / 255, green: 14 / 255, blue: 15 / 255) : Color(red: 29 / 255, green: 29 / 255, blue: 31 / 255)).padding(3)
             Text("fn").font(.system(size: 10, weight: .medium)).foregroundStyle(.white).padding(.top, 6).padding(.trailing, 8)
             Image(systemName: "globe").font(.system(size: 10)).foregroundStyle(.white).offset(x: -22, y: 22)
-        }.frame(width: 40, height: 40).shadow(color: .black.opacity(0.45), radius: 6, y: 4)
+        }
+        .frame(width: 40, height: 40)
+        .overlay(RoundedRectangle(cornerRadius: 9).stroke(SetupStyle.red.opacity(pressed ? 0.9 : 0), lineWidth: 1.5))
+        .shadow(color: pressed ? SetupStyle.red.opacity(0.5) : .black.opacity(0.45), radius: pressed ? 8 : 6, y: pressed ? 0 : 4)
+        .scaleEffect(pressed && !reducedMotion ? 0.95 : 1)
+        .offset(y: pressed && !reducedMotion ? 1.5 : 0)
+        .animation(reducedMotion ? nil : .easeOut(duration: 0.08), value: pressed)
+        .allowsHitTesting(false).accessibilityHidden(true)
     }
 }
 
 /// Port of the supplied HTML canvas: red glow → travelling blue line → rising tick.
-/// Uses elapsed time rather than synthetic voice input; stops drawing when settled.
+/// After the intro, the same shape reacts to the real dictation cycle.
+/// The view pauses its timeline when idle or when Reduce Motion is enabled.
 private enum SetupCompletionRenderer {
     static func progress(_ t: Double, _ a: Double, _ b: Double) -> Double {
         let x = min(1, max(0, (t - a) / (b - a)))
         return x * x * (3 - 2 * x)
     }
 
-    static func draw(in context: inout GraphicsContext, size: CGSize, time t: Double) {
+    static func draw(in context: inout GraphicsContext, size: CGSize, time t: Double, liveFrame: GlowFrame) {
         let width = size.width, height = size.height
-        let mix = progress(t, 1.9, 2.7)
-        let alpha = progress(t, 0.3, 0.9) * (1 - progress(t, 2.6, 3.5))
+        let live = t >= 5.6
+        let reduced = liveFrame.reducedMotion
+        let heat = live ? liveFrame.presence * (1 - liveFrame.processing) * liveFrame.opacity : 0
+        let wave = live ? liveFrame.wavePresence * liveFrame.opacity : 0
+        let clock = live ? (reduced ? 0 : liveFrame.time) : t
+        let mix = live ? (heat + wave > 0.001 ? wave / (heat + wave) : 1) : progress(t, 1.9, 2.7)
+        let alpha = live ? max(heat * 0.85, wave * 0.45) : progress(t, 0.3, 0.9) * (1 - progress(t, 2.6, 3.5))
         let syllable = pow(max(0, sin(t * 8.5 + 2 * sin(t * 1.7))), 0.6)
         let dynamics = 0.55 + 0.45 * sin(t * 1.9 + sin(t * 0.7) * 3)
-        let level = min(1, syllable * dynamics * 0.9) * (1 - progress(t, 1.7, 2)) * progress(t, 0.5, 0.9)
-        let center = 0.5 + 0.3 * sin(max(0, t - 1.9) * 1.8) * (1 - progress(t, 3.3, 4))
+        let level = live ? (reduced ? 0 : liveFrame.level) : min(1, syllable * dynamics * 0.9) * (1 - progress(t, 1.7, 2)) * progress(t, 0.5, 0.9)
+        let center = live ? 0.5 : 0.5 + 0.3 * sin(max(0, t - 1.9) * 1.8) * (1 - progress(t, 3.3, 4))
         if alpha > 0.003 {
-            let pulse = 0.5 + 0.5 * sin(t * 1.7)
+            let pulse = 0.5 + 0.5 * sin(clock * 1.7)
             let h = ((0.16 + level * 0.18) * (1 - mix) + 0.09 * mix) * height * (0.94 + 0.08 * pulse * (1 - mix))
             let strength = alpha * (0.7 + 0.3 * pulse) * (0.8 + 0.2 * level)
             let color = Color(red: (240 - 170 * mix) / 255, green: (40 + 100 * mix) / 255, blue: (34 + 221 * mix) / 255)
@@ -394,7 +424,7 @@ private enum SetupCompletionRenderer {
             for i in 0...40 {
                 let u = Double(i) / 40
                 let hump = exp(-pow(u - 0.5, 2) / 0.09)
-                let variation = sin(u * 6 + t * 1.3) * 0.6 + sin(u * 11 - t * 2.1) * 0.4
+                let variation = sin(u * 6 + clock * 1.3) * 0.6 + sin(u * 11 - clock * 2.1) * 0.4
                 let red = h * (0.55 + 0.45 * hump) + h * 0.16 * (0.3 + level) * variation
                 let envelope = exp(-pow((u - center) / 0.2, 2))
                 path.addLine(to: CGPoint(x: u * width, y: height - (red * (1 - mix) + h * (0.6 + 0.9 * envelope) * mix)))
@@ -410,13 +440,18 @@ private enum SetupCompletionRenderer {
         }
         let lineAlpha = progress(t, 2.2, 2.8)
         guard lineAlpha >= 0.01 else { return }
-        let move = progress(t, 3.3, 4.3), morph = progress(t, 4.25, 4.95)
+        let move = progress(t, 3.3, 4.3)
+        let activeWave = reduced ? 0 : wave
+        let morph = progress(t, 4.25, 4.95) * (1 - activeWave)
         let yCenter = 52 + (height - 52) * 0.42 - 40
         let y = height * 0.94 + (yCenter - height * 0.94) * move
-        let span = width + (64 - width) * move
+        let introSpan = width + (64 - width) * move
+        let span = introSpan + (210 - introSpan) * activeWave
         let waveCenter = width * center
         let lineCenter = waveCenter + (width / 2 - waveCenter) * move
-        let amplitude = 14 * (1 - move), spread = 0.18 * width * (1 - 0.7 * move)
+        let amplitude = 14 * (1 - move) + 13 * activeWave
+        let introSpread = 0.18 * width * (1 - 0.7 * move)
+        let spread = introSpread + (62 - introSpread) * activeWave
         let tick = [CGPoint(x: width / 2 - 27, y: yCenter + 1), CGPoint(x: width / 2 - 9, y: yCenter + 19), CGPoint(x: width / 2 + 27, y: yCenter - 19)]
         let first = hypot(18.0, 18.0), second = hypot(36.0, 38.0)
         var line = Path()
@@ -424,7 +459,7 @@ private enum SetupCompletionRenderer {
             let u = Double(i) / 139
             let x = lineCenter + (u - 0.5) * span
             let envelope = exp(-pow((x - waveCenter) / spread, 2))
-            let waveY = y + envelope * amplitude * (sin(x * 0.032 - t * 9) * 0.7 + sin(x * 0.032 * 1.7 - t * 12) * 0.3)
+            let waveY = y + envelope * amplitude * (sin(x * 0.032 - clock * 9) * 0.7 + sin(x * 0.032 * 1.7 - clock * 12) * 0.3)
             let distance = u * (first + second)
             let segment = distance <= first ? 0 : 1
             let f = distance <= first ? distance / first : (distance - first) / second
@@ -441,8 +476,12 @@ private enum SetupCompletionRenderer {
             .init(color: blue.opacity(opacity), location: max(0, position - 0.28)),
             .init(color: light.opacity(0.95 * lineAlpha), location: position),
             .init(color: blue.opacity(opacity), location: min(1, position + 0.28)), .init(color: blue.opacity(opacity), location: 1)])
-        context.addFilter(.shadow(color: Color(red: 90 / 255, green: 150 / 255, blue: 1).opacity(0.9 * lineAlpha), radius: 12 + 10 * morph))
-        let shading: GraphicsContext.Shading = move > 0.98 ? .color(light.opacity(lineAlpha)) : .linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: width, y: 0))
-        context.stroke(line, with: shading, style: StrokeStyle(lineWidth: 1.6 + 1.6 * morph, lineCap: .round, lineJoin: .round))
+        let stroke = Color(red: (225 + 30 * heat) / 255, green: (238 - 128 * heat) / 255, blue: (255 - 165 * heat) / 255)
+        let shadow = Color(red: (90 + 165 * heat) / 255, green: (150 - 76 * heat) / 255, blue: (255 - 197 * heat) / 255)
+        let pulse = reduced ? 0 : 0.5 + 0.5 * sin(clock * 3.2)
+        let blur = 12 + 10 * morph + heat * (8 + 14 * pulse + 22 * level)
+        context.addFilter(.shadow(color: shadow.opacity(0.9 * lineAlpha), radius: blur))
+        let shading: GraphicsContext.Shading = move > 0.98 ? .color(stroke.opacity(lineAlpha)) : .linearGradient(gradient, startPoint: .zero, endPoint: CGPoint(x: width, y: 0))
+        context.stroke(line, with: shading, style: StrokeStyle(lineWidth: 1.6 + 1.6 * morph + heat * (0.5 + 1.4 * level), lineCap: .round, lineJoin: .round))
     }
 }

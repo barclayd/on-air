@@ -9,7 +9,7 @@ final class AppDriver {
     private let log: FileHandle
     private(set) var last: Snapshot?
 
-    init(test: String, permission: String = "authorized", accessibility: Bool = true, failStart: Bool = false, onboarding: Bool = false) throws {
+    init(test: String, permission: String = "authorized", accessibility: Bool = true, failStart: Bool = false, onboarding: Bool = false, reducedMotion: Bool = false) throws {
         let environment = ProcessInfo.processInfo.environment
         guard let executable = environment["ON_AIR_TEST_EXECUTABLE"],
               FileManager.default.isExecutableFile(atPath: executable),
@@ -29,6 +29,7 @@ final class AppDriver {
         launchEnvironment["ON_AIR_E2E_ACCESSIBILITY"] = accessibility ? "granted" : "denied"
         launchEnvironment["ON_AIR_E2E_FAIL_START"] = failStart ? "1" : "0"
         launchEnvironment["ON_AIR_E2E_ONBOARDING"] = onboarding ? "1" : "0"
+        launchEnvironment["ON_AIR_E2E_REDUCE_MOTION"] = reducedMotion ? "1" : "0"
         process.environment = launchEnvironment
         process.standardOutput = log
         process.standardError = log
