@@ -44,6 +44,7 @@ struct OnboardingView: View {
         .preferredColorScheme(.dark)
         .onChange(of: model.settings.verified) { _, _ in model.reconcile() }
         .onChange(of: model.settings.verifying) { _, _ in model.reconcile() }
+        .onChange(of: model.settings.notesError) { _, _ in model.reconcile() }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: model.step)
     }
 
@@ -55,7 +56,7 @@ struct OnboardingView: View {
                     .accessibilityHidden(true)
                 Text("On Air").font(.system(size: 26, weight: .semibold)).tracking(-0.5)
             }
-            Text(model.step == .permissions ? "Turn these on and you’re ready to talk." : "One last thing. Connect your OpenAI key.")
+            Text(model.step == .permissions ? "Turn these on and you’re ready to talk." : "Add your OpenAI key to start transcribing.")
                 .font(.system(size: 14)).foregroundStyle(SetupStyle.secondary)
         }
     }
@@ -115,18 +116,16 @@ struct OnboardingView: View {
     }
 
     private var connection: some View {
-        VStack(alignment: .leading, spacing: 20) {
-            APIKeySettingsSection(model: model.settings)
-            Text("While you hold fn, your audio is sent to OpenAI for transcription. On Air keeps no recording history.")
-                .font(.system(size: 12)).lineSpacing(3).foregroundStyle(SetupStyle.secondary)
-            Link("Create an OpenAI API key ↗", destination: URL(string: "https://platform.openai.com/api-keys")!)
-                .font(.system(size: 13)).tint(SetupStyle.text)
-            Text("An OpenAI API account with billing enabled is required. A ChatGPT subscription doesn’t include API usage.")
-                .font(.system(size: 12)).lineSpacing(3).foregroundStyle(SetupStyle.secondary)
+        VStack(alignment: .leading, spacing: 22) {
+            DictationNotesSettingsSection(model: model.settings, compact: true)
+            APIKeySettingsSection(model: model.settings, compact: true)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Your key is stored in Keychain. Your audio goes to OpenAI while you hold fn. API usage is billed separately from ChatGPT.")
+                    .font(.system(size: 11)).lineSpacing(2).foregroundStyle(SetupStyle.secondary)
+                Link("Create an OpenAI API key ↗", destination: URL(string: "https://platform.openai.com/api-keys")!)
+                    .font(.system(size: 12)).tint(SetupStyle.text)
+            }
         }
-        .padding(20)
-        .background(SetupStyle.card, in: RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(.white.opacity(0.06)))
     }
 
     private var footer: some View {
@@ -143,7 +142,9 @@ struct OnboardingView: View {
                     .buttonStyle(SetupPrimaryButton()).disabled(!model.permissionsReady)
                     .keyboardShortcut(.defaultAction).accessibilityIdentifier("setup.continue")
             } else {
-                Text("2 of 2").font(.system(size: 12)).foregroundStyle(SetupStyle.secondary)
+                Button("Continue", action: model.continueSetup)
+                    .buttonStyle(SetupPrimaryButton()).disabled(!model.ready)
+                    .keyboardShortcut(.defaultAction).accessibilityIdentifier("setup.continue")
             }
         }
     }

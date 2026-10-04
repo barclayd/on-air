@@ -37,6 +37,7 @@ final class SettingsModel {
     @ObservationIgnored private var verificationID = UUID()
     @ObservationIgnored private var loaded = false
     @ObservationIgnored private var presentationOwners: Set<String> = []
+    @ObservationIgnored private var notesChangePending = false
 
     init(defaults: UserDefaults = .standard,
          credentials: any CredentialStoring = KeychainCredentials(),
@@ -88,14 +89,23 @@ final class SettingsModel {
         notesError = nil
         // Persist immediately; the debounce is only for feedback and reconnecting.
         defaults.set(value, forKey: DictationPreferences.notesKey)
+        notesChangePending = true
         saveFeedback = Task { [weak self] in
             do { try await Task.sleep(for: .milliseconds(700)) } catch { return }
             guard let self else { return }
-            self.didChange()
+            self.flushPendingNotesChanges()
             self.notesSaved = true
             do { try await Task.sleep(for: .milliseconds(1600)) } catch { return }
             self.notesSaved = false
         }
+    }
+
+    /// Start warming the connection with saved notes before setup reports ready.
+    /// The normal debounce can still show feedback, but must not reconnect twice.
+    func flushPendingNotesChanges() {
+        guard notesChangePending else { return }
+        notesChangePending = false
+        didChange()
     }
 
     func updateKey(_ value: String) {
@@ -134,7 +144,11 @@ final class SettingsModel {
                 self.keyDraft = ""
                 self.showsKey = false
                 self.verified = true
-                if save { self.didChange() }
+                if save {
+                    // The credential refresh also picks up all notes already saved.
+                    self.notesChangePending = false
+                    self.didChange()
+                }
             } catch {
                 guard !Task.isCancelled, self.verificationID == id else { return }
                 self.keyError = Self.message(for: error)

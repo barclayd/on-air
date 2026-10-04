@@ -9,7 +9,8 @@ enum OnboardingChecks {
         defer { defaults.removePersistentDomain(forName: suite) }
         let system = FakeSystem()
         let credentials = Credentials()
-        let settings = SettingsModel(defaults: defaults, credentials: credentials, verifier: Verifier())
+        var changes = 0
+        let settings = SettingsModel(defaults: defaults, credentials: credentials, verifier: Verifier(), didChange: { changes += 1 })
         let model = OnboardingModel(settings: settings, system: system, defaults: defaults)
         defer { model.disappear() }
         try check(model.shouldPresentOnLaunch, "First launch opens setup")
@@ -55,16 +56,43 @@ enum OnboardingChecks {
         settings.verifyDraft()
         try await wait { !settings.verifying }
         model.refresh()
-        try check(model.step == .ready && model.ready && !model.completed, "Ready only after verification and Keychain save; not yet dismissed")
+        try check(model.step == .connection && model.ready && !model.completed,
+                  "Verification makes Continue available without hiding the editable notes screen")
+        let notes = "Use British spelling. Write HubSpot.\nCafé 👩🏽‍💻"
+        settings.updateNotes(notes)
+        let beforeContinue = changes
+        model.continueSetup()
+        try check(model.step == .ready && changes == beforeContinue + 1,
+                  "Continuing immediately applies saved notes before reporting ready")
+        try await Task.sleep(for: .milliseconds(750))
+        try check(changes == beforeContinue + 1, "The old debounce must not cause a second connection refresh")
 
         system.accessibilityTrusted = false
         try check(!model.finish() && model.step == .permissions && !defaults.bool(forKey: OnboardingModel.completionKey),
                   "Recheck at Done so revocation between polls can't record false completion")
         system.accessibilityTrusted = true
         model.continueSetup()
+        try check(model.step == .connection, "A verified stored key never bypasses the notes screen")
+        settings.updateNotes(String(repeating: "x", count: DictationPreferences.notesLimit + 1))
+        model.continueSetup()
+        try check(model.step == .connection && !model.ready && !model.finish(), "Oversized notes cannot silently finish with older values")
+        try check(defaults.string(forKey: DictationPreferences.notesKey) == notes, "Invalid notes preserve the previous saved value")
+        settings.updateNotes(notes)
+        model.continueSetup()
         try check(model.finish() && defaults.bool(forKey: OnboardingModel.completionKey), "Persist successful completion")
         model.disappear()
-        let reopened = OnboardingModel(settings: settings, system: system, defaults: defaults)
+        // Recreate both models and read through a fresh defaults instance, as at launch.
+        let restoredSettings = SettingsModel(defaults: UserDefaults(suiteName: suite)!, credentials: credentials, verifier: Verifier())
+        let reopened = OnboardingModel(settings: restoredSettings, system: system, defaults: defaults)
+        try check(restoredSettings.notes == notes, "Notes entered in setup must survive recreating Settings")
+        reopened.appear()
+        try await wait { !restoredSettings.verifying }
+        try check(restoredSettings.verified && restoredSettings.maskedKey == settings.maskedKey && reopened.step == .connection,
+                  "The stored key is reused, masked, and verified on reopen without skipping the middle screen")
+        restoredSettings.updateNotes("")
+        try check(SettingsModel(defaults: defaults, credentials: credentials, verifier: Verifier()).notes.isEmpty,
+                  "Clearing optional notes must persist too")
+        reopened.disappear()
         try check(reopened.completed && reopened.globeConfirmed && !reopened.shouldPresentOnLaunch,
                   "Completed setup doesn't interrupt subsequent healthy launches")
         credentials.key = nil
@@ -90,7 +118,7 @@ enum OnboardingChecks {
         settings.dismiss(owner: "onboarding")
         settings.dismiss(owner: "onboarding") // Native close and SwiftUI disappearance may both arrive.
         try check(settings.keyDraft.isEmpty && !settings.showsKey, "Final close clears sensitive presentation state")
-        print("PASS: onboarding permissions, consent, deep links, revocation, persisted completion, key gating, and shared window lifecycle")
+        print("PASS: onboarding permissions, consent, deep links, revocation, persisted notes/keys, completion, key gating, immediate configuration, and shared window lifecycle")
     }
 
     private static func check(_ value: @autoclosure () -> Bool, _ message: String) throws {
