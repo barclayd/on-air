@@ -66,7 +66,9 @@ final class OnboardingE2ETests: XCTestCase {
         XCTAssertTrue(finished.bool("setupCompleted"))
         try app.send("transcription", ["delay": 0.1, "text": "My first dictation."])
         try app.down()
-        try app.wait("fn starts recording after permission grant") { $0.bool("meterRunning") && $0.number("presence") > 0.9 }
+        try app.wait("fn captures audio after permission grant") {
+            $0.bool("meterRunning") && $0.number("presence") > 0.9 && $0.number("transcriptionBytes") >= 4_800
+        }
         try app.up()
         let pasted = try app.wait("release transcribes and pastes") { $0.idle && $0.number("pasteCount") == 1 }
         XCTAssertEqual(pasted.raw["pastedText"] as? String, "My first dictation.")
@@ -168,7 +170,9 @@ final class OnboardingE2ETests: XCTestCase {
         try app.send("setupDone")
         try app.send("transcription", ["delay": 0.1, "text": "Ready to dictate."])
         try app.down()
-        try app.wait("recording") { $0.bool("meterRunning") && $0.number("presence") > 0.9 }
+        try app.wait("enough audio for the first dictation") {
+            $0.bool("meterRunning") && $0.number("presence") > 0.9 && $0.number("transcriptionBytes") >= 4_800
+        }
         try app.up()
         let pasted = try app.wait("first result") { $0.idle && $0.number("pasteCount") == 1 }
         XCTAssertEqual(pasted.raw["pastedText"] as? String, "Ready to dictate.")

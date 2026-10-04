@@ -20,9 +20,9 @@ import websockets
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / ".build/benchmarks"
 TEXT = {
-    10: "Please ask the AnyVan team to review the ALM report tomorrow morning and confirm the delivery time before lunch.",
-    30: "Please ask the AnyVan team to review the ALM report tomorrow morning and confirm the delivery time before lunch. We need to organise the collection for Thursday, the fifteenth of October, at half past nine. The customer has requested a smaller vehicle because the entrance is narrow. Please include the reference number four seven two eight in the confirmation and check that the updated price is two hundred and fifty pounds.",
-    60: "Please ask the AnyVan team to review the ALM report tomorrow morning and confirm the delivery time before lunch. We need to organise the collection for Thursday, the fifteenth of October, at half past nine. The customer has requested a smaller vehicle because the entrance is narrow. Please include the reference number four seven two eight in the confirmation and check that the updated price is two hundred and fifty pounds. I also want to summarise what we agreed during the planning discussion. We will start with a small native application, keep the interface simple, and focus on accuracy before adding more features. The first version should work in our usual messaging tools and browser. If the connection fails, keep the recording temporarily so we can retry. Once the result is ready, insert the complete text in the original field and leave the clipboard exactly as it was before.",
+    10: "Please ask the operations team to review the ALM report tomorrow morning and confirm the delivery time before lunch.",
+    30: "Please ask the operations team to review the ALM report tomorrow morning and confirm the delivery time before lunch. We need to organise the collection for Thursday, the fifteenth of October, at half past nine. The customer has requested a smaller vehicle because the entrance is narrow. Please include the reference number four seven two eight in the confirmation and check that the updated price is two hundred and fifty pounds.",
+    60: "Please ask the operations team to review the ALM report tomorrow morning and confirm the delivery time before lunch. We need to organise the collection for Thursday, the fifteenth of October, at half past nine. The customer has requested a smaller vehicle because the entrance is narrow. Please include the reference number four seven two eight in the confirmation and check that the updated price is two hundred and fifty pounds. I also want to summarise what we agreed during the planning discussion. We will start with a small native application, keep the interface simple, and focus on accuracy before adding more features. The first version should work in our usual messaging tools and browser. If the connection fails, keep the recording temporarily so we can retry. Once the result is ready, insert the complete text in the original field and leave the clipboard exactly as it was before.",
 }
 
 
@@ -60,7 +60,7 @@ async def realtime(key, pcm, model, delay=None):
         created = json.loads(await ws.recv())
         if created["type"] == "error":
             raise RuntimeError(created.get("error", {}).get("code", "session rejected"))
-        config = {"model": model, "languages": ["en"], "keywords": ["AnyVan", "ALM"]}
+        config = {"model": model, "languages": ["en"], "keywords": ["ALM"]}
         if delay:
             config["delay"] = delay
         await ws.send(json.dumps({"type": "session.update", "session": {"type": "transcription", "audio": {"input": {"format": {"type": "audio/pcm", "rate": 24000}, "transcription": config, "turn_detection": None}}}}))
@@ -104,7 +104,7 @@ async def realtime(key, pcm, model, delay=None):
 def batch(key, seconds):
     boundary = "OnAirBenchmarkBoundary"
     body = bytearray()
-    for name, value in [("model", "gpt-transcribe"), ("stream", "true"), ("languages[]", "en"), ("keywords[]", "AnyVan"), ("keywords[]", "ALM")]:
+    for name, value in [("model", "gpt-transcribe"), ("stream", "true"), ("languages[]", "en"), ("keywords[]", "ALM")]:
         body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"\r\n\r\n{value}\r\n'.encode())
     body.extend(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="audio.wav"\r\nContent-Type: audio/wav\r\n\r\n'.encode())
     body.extend((OUTPUT/f"synthetic-{seconds}.wav").read_bytes())

@@ -32,7 +32,7 @@ final class SettingsE2ETests: XCTestCase {
 
     func testNotesPersistAcrossClosingAndReopeningSettings() throws {
         _ = try launchAndOpen()
-        let notes = "Write HubSpot. Use British spelling.\nAnyVan and ALM."
+        let notes = "Write HubSpot. Use British spelling.\nKeep API and CSS uppercase."
         try app.send("settingsNotes", ["text": notes])
         try app.send("closeSettings")
         try app.send("openSettings")

@@ -2,7 +2,7 @@
 
 A native macOS dictation app with the visual design from the supplied On Air film. Hold **fn / Globe**, speak, and release. A red glow responds to your voice; a blue waveform appears while OpenAI finishes the transcript, then the completed text is pasted into the original input field.
 
-Audio streams to `gpt-live-transcribe` while fn is held, using low delay, English, and the hints **AnyVan** and **ALM**. There is no separate AI rewrite step. Failed recordings can be retried with `gpt-transcribe`. Audio is held only in memory, never written to disk.
+Audio streams to `gpt-live-transcribe` while fn is held, using low delay, English, and the hint **ALM**. There is no separate AI rewrite step. Failed recordings can be retried with `gpt-transcribe`. Audio is held only in memory, never written to disk.
 
 A local Swift rule formats clear dotted version numbers before insertion or Copy: **one dot two dot six → 1.2.6**. It requires at least three numeric components and a spoken “dot”, supports mixed words/digits and English number words through 999, and preserves surrounding text. Two-component phrases and unsupported/ambiguous number components stay unchanged. No additional API call is made.
 
