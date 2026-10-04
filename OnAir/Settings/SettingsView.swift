@@ -22,7 +22,7 @@ struct SettingsView: View {
                 Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
                 APIKeySettingsSection(model: model)
-                Button("Set up permissions and fn key…", action: openSetup)
+                Button("Set up On Air…", action: openSetup)
                     .buttonStyle(.link).font(.system(size: 12))
             }
             .padding(.horizontal, 32).padding(.top, 16).padding(.bottom, 32)
@@ -64,26 +64,29 @@ struct SettingsView: View {
     }
 }
 
-/// Both onboarding and Settings edit the same immediately persisted preference.
+/// Onboarding and Settings edit the same immediately persisted optional notes.
 struct DictationNotesSettingsSection: View {
     @Bindable var model: SettingsModel
     var compact = false
+    var onFocusChange: (Bool) -> Void = { _ in }
     @FocusState private var focus: Field?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private enum Field { case notes }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 heading("Dictation notes")
                 if compact {
-                    Text("Optional").font(.system(size: 12)).foregroundStyle(SettingsPalette.secondary)
+                    Text("Optional").font(.system(size: 12)).foregroundStyle(Color(red: 111 / 255, green: 107 / 255, blue: 103 / 255))
                 }
                 Spacer()
-                Text("Saved").font(.system(size: 12))
-                    .foregroundStyle(SettingsPalette.secondary)
-                    .opacity(model.notesSaved ? 1 : 0)
-                    .accessibilityHidden(!model.notesSaved)
+                if !compact {
+                    Text("Saved").font(.system(size: 12))
+                        .foregroundStyle(SettingsPalette.secondary)
+                        .opacity(model.notesSaved ? 1 : 0)
+                        .accessibilityHidden(!model.notesSaved)
+                }
             }
             if !compact { hint("Names, jargon or style On Air should know about.") }
             ZStack(alignment: .topLeading) {
@@ -102,11 +105,12 @@ struct DictationNotesSettingsSection: View {
                         .allowsHitTesting(false).accessibilityHidden(true)
                 }
             }
-            .frame(height: compact ? 90 : 112)
+            .frame(height: compact ? 92 : 112)
             .background(fieldBackground(focused: focus == .notes, error: model.notesError != nil))
             if let error = model.notesError { errorText(error) }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: model.notesSaved)
+        .onChange(of: focus) { _, value in onFocusChange(value == .notes) }
     }
 
     private func heading(_ text: String) -> some View { Text(text).font(.system(size: 14, weight: .semibold)) }

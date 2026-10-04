@@ -37,6 +37,11 @@ enum SettingsChecks {
         model.verifyDraft()
         try await verifier.waitForCalls(1)
         try check(model.verifying && store.key == nil, "Never save a key before OpenAI accepts it")
+        // SecureField can publish the same value again when Verify ends editing.
+        // This commit must not cancel the in-flight verification; a real edit must.
+        model.updateKey("  sk-fixture-first-key\n")
+        try check(model.verifying && verifier.calls == 1,
+                  "Committing an unchanged key must not cancel verification or require a second click")
         verifier.complete(0, with: .success(()))
         try await wait { !model.verifying }
         try check(store.key == "sk-fixture-first-key" && model.verified, "Save the trimmed verified credential")
