@@ -6,7 +6,7 @@ Audio streams to `gpt-live-transcribe` while fn is held, using low delay, Englis
 
 A local Swift rule formats clear dotted version numbers before insertion or Copy: **one dot two dot six → 1.2.6**. It requires at least three numeric components and a spoken “dot”, supports mixed words/digits and English number words through 999, and preserves surrounding text. Two-component phrases and unsupported/ambiguous number components stay unchanged. No additional API call is made.
 
-Add and verify your OpenAI key in **Settings…**; it is stored in macOS Keychain. Existing developer installs can still import a literal `OPENAI_API_KEY` assignment from `~/.env` on first use. That file is parsed, never executed, and is not re-imported after removing a key in Settings. API keys, dictation notes, and transcript contents are excluded from app diagnostic logs.
+Add and verify your OpenAI key during setup or in **Settings…**; it is stored in macOS Keychain. Existing developer installs can still import a literal `OPENAI_API_KEY` assignment from `~/.env` on first use. That file is parsed, never executed, and is not re-imported after removing a key in Settings. API keys, dictation notes, and transcript contents are excluded from app diagnostic logs.
 
 ## Build and run
 
@@ -20,7 +20,7 @@ xcodebuild -project OnAir.xcodeproj -scheme OnAir \
 open ".build/Build/Products/Debug/On Air.app"
 ```
 
-The menu bar provides status, **Settings…**, **Quit On Air**, and **Copy transcript** or **Retry transcription** when needed. Settings is also available through the standard On Air application menu and **⌘,** while the app is active. The app appears in the Dock only while Settings is open; closing it returns to menu-bar-only operation.
+The menu bar provides status, **Set up On Air…**, **Settings…**, **Quit On Air**, and **Copy transcript** or **Retry transcription** when needed. Settings is also available through the standard On Air application menu and **⌘,** while the app is active. The app appears in the Dock while setup or Settings is open; closing the last window returns to menu-bar-only operation.
 
 ## Settings
 
@@ -36,11 +36,16 @@ The signed functional Release build is installed at `/Users/danbarclay/Applicati
 
 ## macOS setup
 
-- Allow **Accessibility** for On Air in System Settings → Privacy & Security, so it can observe fn in other apps. macOS prompts on launch; On Air starts observing keys as soon as the grant is detected.
-- Allow **Microphone** when macOS asks on your first fn hold. Release fn after granting access and hold it again to try the glow.
-- Set System Settings → Keyboard → **Press 🌐 key to → Do Nothing**, so macOS doesn't also open its emoji picker or dictation.
+On first launch, a native setup window follows the supplied On Air Onboarding design. It can be closed at any time and reopened from **Set up On Air…** in the menu bar or the link in Settings.
 
-These are native macOS permission dialogs; a custom onboarding flow is deferred.
+1. **Microphone** requests the native permission on Allow. Previously denied access opens Privacy & Security → Microphone; restricted access explains that administrator help is needed.
+2. **Accessibility** opens the relevant privacy pane so you can enable On Air. On macOS 27 this pane is named **Device Control and Data Access**. Accessibility covers both the existing global fn monitor and pasting; On Air does not request separate Input Monitoring access.
+3. **fn / Globe** opens Keyboard settings. Choose **Do Nothing**, then confirm that choice in setup. This is explicitly labelled as user confirmation: macOS has no public API for automatically checking this preference, and On Air does not write undocumented system preferences.
+4. **OpenAI key** uses the same key entry, actual transcription-session verification, and Keychain storage as Settings. There is no recording or audio transmission during verification.
+
+Permission rows reflect live macOS status, including changes made while System Settings is frontmost. A click, a return to the app, or a cached permission callback never counts as a grant. **Done** rechecks permissions and requires a verified saved key. The red/blue/checkmark finish is decorative; only fn can start recording. Reduce Motion shows a static checkmark.
+
+Completed setup is remembered. Subsequent launches reopen setup if a required permission or stored key is missing. Both setup and Settings can remain open without one closing the other's application menu or cancelling its key verification. System Settings links include manual navigation guidance if opening fails.
 
 ## Interaction
 
@@ -72,7 +77,7 @@ Each release includes a versioned DMG and an identical `On-Air.dmg` for the webs
 Tools/test.sh
 ```
 
-Runs 38 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for settings, credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 42 app-process E2E tests and a visual regression test covering twelve reference images, plus checks for onboarding, settings, credential parsing, PCM/WAV framing, version formatting, and clipboard preservation. Coverage includes first-launch setup, permission denial/revocation, key-gated readiness, shared-window lifecycle, native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 

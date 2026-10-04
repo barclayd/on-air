@@ -4,7 +4,7 @@ Interview date: 3 October 2026.
 
 ## Current delivery
 
-The initial delivery was a visual prototype. On 3 October 2026 the user explicitly approved adding working transcription and pasting, reusing the OpenAI key in `~/.env`. The functional build is installed and the user verified that the spoken AnyVan/ALM sentence was transcribed and pasted correctly. The user subsequently requested the supplied On Air Settings design, accessible from the menu bar and standard macOS Settings command. Guided setup and other product screens remain deferred.
+The initial delivery was a visual prototype. On 3 October 2026 the user explicitly approved adding working transcription and pasting, reusing the OpenAI key in `~/.env`. The functional build is installed and the user verified that the spoken AnyVan/ALM sentence was transcribed and pasted correctly. The user subsequently requested the supplied On Air Settings design, accessible from the menu bar and standard macOS Settings command. On 4 October 2026, the user requested a native guided setup based on the supplied On Air Onboarding design, with permission validation and direct System Settings navigation.
 
 - Voice-responsive, soft red glow along the bottom of the screen while holding fn / Globe. Subtle variations in height and pulse strength drift across it, with a different starting phase per hold. The user approved decorative asymmetry when directional audio is unavailable; this does not claim to locate the speaker.
 - On release, cool to blue, collapse into a thin travelling waveform, then fade out.
@@ -13,7 +13,7 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - One active dictation at a time. Fn-down and fn-up are the only recording controls; no Escape, toggle, or buttons.
 - If another key is used during a hold, let the shortcut work normally and discard on fn release.
 - Follow the microphone selected in macOS; keep the chosen input fixed for the hold.
-- No custom setup/onboarding window. Native system permissions are still necessary.
+- Native onboarding uses the supplied dark permission-card and blue-checkmark design, adapted to the real prerequisites. It is dismissible and available again from the menu bar and Settings.
 
 ## Functional implementation and retained decisions
 
@@ -36,7 +36,7 @@ The initial delivery was a visual prototype. On 3 October 2026 the user explicit
 - API key in Keychain. No On Air cloud account.
 - Settings contains auto-saving dictation notes and verified Keychain credentials, matching the supplied HTML reference. Notes supplement the shared live/retry prompt, with a 1,000-character limit and no cleanup pass. The native Settings scene is reachable through the menu bar and the standard application Settings command (⌘,). A normal app menu/Dock presence exists while the window is open, then accessory mode resumes on close.
 - Key verification authenticates and configures a transcription session without recording or sending audio. A successful verification must also save to Keychain before showing success. Cancelled/stale verification cannot save a replaced/removed key. Removing a key disables legacy automatic dotenv import. Configuration changes wait until dictation has finished before refreshing its warm connection.
-- A dedicated vocabulary editor, launch at login, sounds, and guided setup remain deferred.
+- A dedicated vocabulary editor, launch at login, and sounds remain deferred.
 
 ## Implementation update — 3 October 2026
 
@@ -58,3 +58,12 @@ On 3 October, diagnostic logs showed completed transcripts and an unchanged dest
 - The OpenWhispr source reports slow live-model completion in its tests. Treat that as a hypothesis to measure on representative audio, not a guaranteed property of the API.
 
 Sources: [OpenAI Realtime transcription](https://developers.openai.com/api/docs/guides/realtime-transcription), [Wispr Canto](https://wisprflow.ai/canto), [Wispr latency goals](https://wisprflow.ai/post/technical-challenges), [OpenWhispr realtime client](https://github.com/OpenWhispr/openwhispr/blob/main/src/helpers/openaiRealtimeStreaming.js).
+
+## Onboarding implementation — 4 October 2026
+
+- Two short steps: macOS permissions/fn configuration, then verified OpenAI credentials. Existing saved keys are reused and checked. Only a verified saved key plus granted permissions and explicit fn-setting confirmation can finish setup.
+- System APIs validate Microphone and Accessibility continuously while the window is open, including when System Settings is frontmost. Requests are made in response to their buttons, not automatically at launch. Denied access opens the correct pane; restricted access explains the limitation.
+- No separate Input Monitoring request: [Apple’s event-monitor documentation](https://developer.apple.com/library/archive/documentation/Cocoa/Conceptual/EventOverview/MonitoringEvents/MonitoringEvents.html) states that Accessibility trust permits global key monitoring, matching the existing NSEvent implementation.
+- fn/Globe → Do Nothing is a user-confirmed setting, never presented as an automatic system check. Keyboard settings opens directly; On Air does not mutate undocumented system preferences.
+- Setup follows [Apple’s onboarding guidance](https://developer.apple.com/design/human-interface-guidelines/onboarding): brief, dismissible, contextual requests, native controls, and easy reopening. The completion animation never accesses the microphone and becomes a static checkmark with Reduce Motion.
+- Settings and setup share key UI/verification without cancelling each other. A completed healthy install launches in menu-bar mode; missing permissions or credentials reopen setup for repair.

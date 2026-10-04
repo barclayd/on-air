@@ -18,6 +18,16 @@ final class EndToEndBridge {
     private let settingsCredentials = FixtureCredentials()
     private let settingsVerifier = FixtureKeyVerifier()
     private var settingsModel: SettingsModel?
+    private var onboarding: OnboardingWindowController?
+    private lazy var setupSystem = FixtureSetupSystem(input: input)
+    var shouldShowOnboarding: Bool { ProcessInfo.processInfo.environment["ON_AIR_E2E_ONBOARDING"] == "1" }
+
+    func makeOnboarding(settings: SettingsModel) -> OnboardingWindowController {
+        let defaults = UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!
+        let window = OnboardingWindowController(model: OnboardingModel(settings: settings, system: setupSystem, defaults: defaults))
+        onboarding = window
+        return window
+    }
 
     func makeSettings(controller: PrototypeController) -> SettingsModel {
         let defaults = UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!
@@ -46,7 +56,6 @@ final class EndToEndBridge {
     func makeController() -> PrototypeController {
         PrototypeController(
             keys: FunctionKeyMonitor(
-                requestAccessibility: { [input] in input.accessibility },
                 accessibilityTrusted: { [input] in input.accessibility },
                 functionHeld: { [input] in input.functionHeld },
                 observesGlobalEvents: false
@@ -102,6 +111,25 @@ final class EndToEndBridge {
 
     private func handle(_ command: [String: Any], controller: PrototypeController) throws {
         switch command["action"] as? String {
+        case "openSetup": onboarding?.present()
+        case "closeSetup": onboarding?.close()
+        case "setupMicrophone": onboarding?.model.enableMicrophone()
+        case "setupAccessibility": onboarding?.model.enableAccessibility()
+        case "setupKeyboard": onboarding?.model.configureKeyboard()
+        case "setupConfirmKeyboard": onboarding?.model.confirmGlobeSetting(command["confirmed"] as? Bool ?? true)
+        case "setupContinue": onboarding?.model.continueSetup()
+        case "setupBack": onboarding?.model.back()
+        case "setupDone":
+            if onboarding?.model.finish() == true { onboarding?.close() }
+        case "setupOpenFailure": setupSystem.opensSuccessfully = false
+        case "setupMicrophoneStatus":
+            input.status = AVAuthorizationStatus(rawValue: command["value"] as? Int ?? 0) ?? .notDetermined
+        case "renderSetup":
+            guard let view = onboarding?.window?.contentView?.superview,
+                  let bitmap = view.bitmapImageRepForCachingDisplay(in: view.bounds) else { throw BridgeError.renderFailed }
+            view.cacheDisplay(in: view.bounds, to: bitmap)
+            guard let data = bitmap.representation(using: .png, properties: [:]) else { throw BridgeError.renderFailed }
+            try data.write(to: directory.appendingPathComponent("setup.png"), options: .atomic)
         case "openSettings":
             guard let (menu, index) = settingsCommand(in: NSApp.mainMenu) else { throw BridgeError.invalidCommand }
             menu.performActionForItem(at: index)
@@ -230,6 +258,17 @@ final class EndToEndBridge {
             "transcriptionRetries": transcription.retries,
             "transcriptionBytes": transcription.audioBytes,
             "transcriptionCancels": transcription.cancels,
+            "setupWindows": NSApp.windows.filter { $0.identifier?.rawValue == "on-air.onboarding" && $0.isVisible }.map(\.windowNumber),
+            "setupStep": onboarding?.model.step.rawValue ?? "",
+            "setupMicrophone": onboarding?.model.microphone.rawValue ?? -1,
+            "setupAccessibility": onboarding?.model.accessibility ?? false,
+            "setupGlobeConfirmed": onboarding?.model.globeConfirmed ?? false,
+            "setupPermissionsReady": onboarding?.model.permissionsReady ?? false,
+            "setupReady": onboarding?.model.ready ?? false,
+            "setupCompleted": onboarding?.model.completed ?? false,
+            "setupNotice": onboarding?.model.notice ?? "",
+            "setupOpenedPanes": setupSystem.openedPanes.map(\.rawValue),
+            "setupAccessibilityRequests": setupSystem.accessibilityRequests,
             "settingsCommand": settingsCommand(in: NSApp.mainMenu) != nil,
             "settingsWindows": NSApp.windows.filter { $0.identifier?.rawValue == "on-air.settings" && $0.isVisible }.map(\.windowNumber),
             "settingsNotes": settingsModel?.notes ?? "",
@@ -268,6 +307,27 @@ final class EndToEndBridge {
     }
 
     enum BridgeError: Error { case invalidCommand, renderFailed }
+}
+
+@MainActor
+final class FixtureSetupSystem: SetupSystemAccess {
+    let input: FixtureInput
+    var openedPanes: [SetupPane] = []
+    var accessibilityRequests = 0
+    var opensSuccessfully = true
+    init(input: FixtureInput) { self.input = input }
+    var microphoneStatus: AVAuthorizationStatus { input.status }
+    var accessibilityTrusted: Bool { input.accessibility }
+    func requestMicrophone(_ completion: @escaping @Sendable (Bool) -> Void) { input.requestAccess(completion) }
+    func requestAccessibility() { accessibilityRequests += 1 }
+    func open(_ pane: SetupPane) -> Bool {
+        openedPanes.append(pane)
+        // Opt-in manual navigation check only; never grant real permissions in the fixture.
+        if ProcessInfo.processInfo.environment["ON_AIR_E2E_OPEN_SETTINGS"] == "1" {
+            return MacSetupSystemAccess().open(pane)
+        }
+        return opensSuccessfully
+    }
 }
 
 @MainActor

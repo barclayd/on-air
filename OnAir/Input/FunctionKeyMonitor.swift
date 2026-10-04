@@ -13,23 +13,17 @@ final class FunctionKeyMonitor {
     private var permissionWatchdog: Timer?
     private var isHeld = false
     private var usedWithAnotherKey = false
-    private let requestAccessibility: () -> Bool
     private let accessibilityTrusted: () -> Bool
     private let functionHeld: () -> Bool
     private let observesGlobalEvents: Bool
 
     init(
-        requestAccessibility: @escaping () -> Bool = {
-            let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true]
-            return AXIsProcessTrustedWithOptions(options as CFDictionary)
-        },
         accessibilityTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
         functionHeld: @escaping () -> Bool = {
             CGEventSource.flagsState(.combinedSessionState).contains(.maskSecondaryFn)
         },
         observesGlobalEvents: Bool = true
     ) {
-        self.requestAccessibility = requestAccessibility
         self.accessibilityTrusted = accessibilityTrusted
         self.functionHeld = functionHeld
         self.observesGlobalEvents = observesGlobalEvents
@@ -38,8 +32,8 @@ final class FunctionKeyMonitor {
     func start() {
         guard globalMonitor == nil, localMonitor == nil, permissionWatchdog == nil else { return }
 
-        // macOS owns this permission dialog; On Air has no onboarding window.
-        if requestAccessibility() {
+        // Setup requests permission in context; launch only checks existing trust.
+        if accessibilityTrusted() {
             installMonitors()
         } else {
             // Pick up the first permission grant without needing a relaunch.

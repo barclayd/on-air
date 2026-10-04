@@ -11,9 +11,10 @@ private enum SettingsPalette {
 
 struct SettingsView: View {
     @Bindable var model: SettingsModel
+    var openSetup: () -> Void = {}
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @FocusState private var focus: Field?
-    private enum Field { case notes, key }
+    private enum Field { case notes }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -51,23 +52,16 @@ struct SettingsView: View {
 
                 Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
-                VStack(alignment: .leading, spacing: 10) {
-                    heading("OpenAI API key")
-                    hint("Used only to transcribe your voice. Stored in your Mac’s Keychain.")
-                    if let key = model.maskedKey {
-                        storedKey(key)
-                    } else {
-                        keyEntry
-                    }
-                    keyStatus
-                }
+                APIKeySettingsSection(model: model)
+                Button("Set up permissions and fn key…", action: openSetup)
+                    .buttonStyle(.link).font(.system(size: 12))
             }
             .padding(.horizontal, 32).padding(.top, 16).padding(.bottom, 32)
         }
         .frame(width: 520)
         .foregroundStyle(SettingsPalette.text)
         .background(SettingsPalette.background.ignoresSafeArea())
-        .background(SettingsWindowChrome(onClose: model.disappear))
+        .background(SettingsWindowChrome(onClose: { model.dismiss(owner: "settings") }))
         .preferredColorScheme(.dark)
         .toolbar {
             if #available(macOS 26.0, *) {
@@ -85,9 +79,9 @@ struct SettingsView: View {
             // Settings/Edit/Window commands only while this window is open.
             NSApp.setActivationPolicy(.regular)
             NSApp.activate(ignoringOtherApps: true)
-            model.appear()
+            model.present(owner: "settings")
         }
-        .onDisappear { model.disappear() }
+        .onDisappear { model.dismiss(owner: "settings") }
     }
 
     private var title: some View {
@@ -98,6 +92,39 @@ struct SettingsView: View {
                 .foregroundStyle(Color(red: 189 / 255, green: 184 / 255, blue: 178 / 255))
         }
         .accessibilityElement(children: .combine)
+    }
+
+    private func heading(_ text: String) -> some View { Text(text).font(.system(size: 14, weight: .semibold)) }
+    private func hint(_ text: String) -> some View {
+        Text(text).font(.system(size: 13)).lineSpacing(3)
+            .foregroundStyle(SettingsPalette.secondary).fixedSize(horizontal: false, vertical: true)
+    }
+    private func errorText(_ text: String) -> some View {
+        Text(text).font(.system(size: 12)).foregroundStyle(SettingsPalette.error)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    private func fieldBackground(focused: Bool, error: Bool = false) -> some View {
+        RoundedRectangle(cornerRadius: 10).fill(SettingsPalette.field)
+            .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(error ? SettingsPalette.error.opacity(0.6) : .white.opacity(focused ? 0.22 : 0.08)))
+            .background(RoundedRectangle(cornerRadius: 13).stroke(error ? SettingsPalette.error.opacity(0.1) : .white.opacity(focused ? 0.05 : 0), lineWidth: 6))
+    }
+}
+
+struct APIKeySettingsSection: View {
+    @Bindable var model: SettingsModel
+    @FocusState private var focus: Field?
+    private enum Field { case key }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            heading("OpenAI API key")
+            hint("Used only to transcribe your voice. Stored in your Mac’s Keychain.")
+            if let key = model.maskedKey {
+                storedKey(key)
+            } else {
+                keyEntry
+            }
+            keyStatus
+        }
     }
 
     private var keyEntry: some View {
@@ -264,7 +291,7 @@ private struct SettingsWindowChrome: NSViewRepresentable {
         }
         @objc private func willClose(_ notification: Notification) {
             onClose()
-            NSApp.setActivationPolicy(.accessory)
+            AppWindowLifecycle.didClose(window)
         }
     }
 }
