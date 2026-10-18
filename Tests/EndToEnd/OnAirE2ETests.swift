@@ -462,7 +462,7 @@ final class OnAirE2ETests: XCTestCase {
         XCTAssertEqual(recovered.raw["pastedText"] as? String, "Recovered complete transcript.")
     }
 
-    func testNewHoldClearsUncopiedResult() throws {
+    func testNewHoldPreservesUncopiedResult() throws {
         try launch()
         try app.send("transcription", ["delay": 0.1])
         try startHold()
@@ -471,7 +471,7 @@ final class OnAirE2ETests: XCTestCase {
         try app.up()
         try app.wait("uncopied result") { $0.idle && !$0.status.hasPrefix("Hold") }
         let next = try startHold()
-        XCTAssertEqual(next.raw["pendingTranscript"] as? String, "")
+        XCTAssertEqual(next.raw["pendingTranscript"] as? String, "This is a completed test transcript.")
         XCTAssertFalse(next.bool("canRetry"))
         XCTAssertEqual(next.number("pasteCount"), 0)
     }

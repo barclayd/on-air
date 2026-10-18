@@ -4,58 +4,24 @@ import OSLog
 
 @MainActor
 protocol TranscriptInserting: AnyObject {
-    func captureDestination()
-    func insert(_ transcript: String) async -> Bool
-    func copy(_ transcript: String)
-    func clearDestination()
+    func captureDestination() -> DictationDestination?
+    func insert(_ transcript: String, into destination: DictationDestination) async -> Bool
+    func copy(_ transcript: String) -> Bool
 }
 
 @MainActor
 final class TranscriptInserter: TranscriptInserting {
-    private struct Destination {
-        let application: pid_t
-        let element: AXUIElement
-        let selection: CFRange?
-    }
-    private var destination: Destination?
     private let pasteboard: NSPasteboard
     private let logger = Logger(subsystem: "com.danbarclay.onair", category: "Paste")
 
     init(pasteboard: NSPasteboard = .general) { self.pasteboard = pasteboard }
 
-    func captureDestination() {
-        destination = nil
-        guard let application = NSWorkspace.shared.frontmostApplication else {
-            logger.info("Destination unavailable: no foreground application")
-            return
-        }
-        guard application.processIdentifier != ProcessInfo.processInfo.processIdentifier else {
-            logger.info("Destination unavailable: On Air is foreground")
-            return
-        }
-        guard let element = focusedElement() else {
-            logger.info("Destination unavailable: focused element lookup failed")
-            return
-        }
-        let role = stringAttribute(element, kAXRoleAttribute)
-        let subrole = stringAttribute(element, kAXSubroleAttribute)
-        guard subrole != kAXSecureTextFieldSubrole as String else {
-            logger.info("Destination unavailable: secure field")
-            return
-        }
-        guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) else {
-            logger.info("Destination unavailable: focused element is not a recognised text field")
-            return
-        }
-        destination = Destination(application: application.processIdentifier, element: element, selection: selectedRange(element))
-        logger.info("Paste destination captured")
+    func captureDestination() -> DictationDestination? {
+        SystemDestinationAccess.capture().map { DictationDestination(access: $0) }
     }
 
-    func clearDestination() { destination = nil }
-
-    func insert(_ transcript: String) async -> Bool {
+    func insert(_ transcript: String, into destination: DictationDestination) async -> Bool {
         guard !transcript.isEmpty else { return skip("empty transcript") }
-        guard destination != nil else { return skip("no captured destination") }
         // Do not combine the synthetic paste with a physically held shortcut modifier.
         for _ in 0..<10 {
             let flags = CGEventSource.flagsState(.combinedSessionState)
@@ -63,18 +29,21 @@ final class TranscriptInserter: TranscriptInserting {
             do { try await Task.sleep(for: .milliseconds(50)) } catch { return false }
         }
         guard !Task.isCancelled else { return skip("cancelled") }
-        guard destinationStillFocused() else { return false }
         guard CGPreflightPostEventAccess() else { return skip("event posting permission unavailable") }
         guard CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn]).isEmpty else {
             return skip("keyboard modifier still held")
         }
+        guard await destination.prepare() else { return skip("destination could not be restored safely") }
+        guard CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn]).isEmpty else {
+            return skip("keyboard modifier pressed during focus recovery")
+        }
         guard let saved = ClipboardSnapshot.capture(pasteboard) else {
-            return insertWithoutClipboard(transcript)
+            return insertWithoutClipboard(transcript, into: destination)
         }
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else { return skip("paste event creation failed") }
-        guard destinationStillFocused() else { return false }
+        guard destination.isReadyForInsertion() else { return false }
         guard pasteboard.changeCount == saved.changeCount else { return skip("clipboard changed before paste") }
         pasteboard.clearContents()
         guard pasteboard.setString(transcript, forType: .string) else {
@@ -82,54 +51,39 @@ final class TranscriptInserter: TranscriptInserting {
             return skip("clipboard write failed")
         }
         let ourChange = pasteboard.changeCount
+        guard destination.isReadyForInsertion() else {
+            saved.restore(pasteboard, ifUnchanged: ourChange)
+            return skip("destination changed while preparing clipboard")
+        }
         down.flags = .maskCommand
         up.flags = .maskCommand
-        down.post(tap: .cghidEventTap)
-        up.post(tap: .cghidEventTap)
+        down.postToPid(destination.processIdentifier)
+        up.postToPid(destination.processIdentifier)
         // Cancellation must still restore the clipboard; a newer user copy always wins.
         try? await Task.sleep(for: .milliseconds(350))
         saved.restore(pasteboard, ifUnchanged: ourChange)
         return true
     }
 
-    func copy(_ transcript: String) {
+    func copy(_ transcript: String) -> Bool {
         pasteboard.clearContents()
-        pasteboard.setString(transcript, forType: .string)
+        return pasteboard.setString(transcript, forType: .string)
     }
 
-    private func insertWithoutClipboard(_ transcript: String) -> Bool {
+    private func insertWithoutClipboard(_ transcript: String, into destination: DictationDestination) -> Bool {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let events = UnicodeInsertion.events(for: transcript, source: source) else {
             return skip("clipboard unavailable and text cannot be safely typed")
         }
-        guard !Task.isCancelled, destinationStillFocused(), let destination,
+        guard !Task.isCancelled, destination.isReadyForInsertion(),
               CGPreflightPostEventAccess(),
               CGEventSource.flagsState(.combinedSessionState).intersection([.maskCommand, .maskControl, .maskAlternate, .maskShift, .maskSecondaryFn]).isEmpty else {
             return skip("destination or keyboard state changed before direct insertion")
         }
         // Target the captured app and enqueue the complete text without suspending.
         // No Return/Tab/control keystrokes, clipboard mutation, or mid-insertion fallback.
-        for event in events { event.postToPid(destination.application) }
+        for event in events { event.postToPid(destination.processIdentifier) }
         logger.info("Text insertion posted without changing clipboard")
-        return true
-    }
-
-    private func destinationStillFocused() -> Bool {
-        guard let destination else { return skip("no captured destination") }
-        guard NSWorkspace.shared.frontmostApplication?.processIdentifier == destination.application else {
-            return skip("foreground application changed")
-        }
-        guard let current = focusedElement() else { return skip("focused element lookup failed") }
-        guard CFEqual(current, destination.element) else { return skip("focused element changed") }
-        if let expected = destination.selection {
-            guard let selection = selectedRange(current) else { return skip("selection could not be rechecked") }
-            guard selection.location == expected.location, selection.length == expected.length else {
-                return skip("selection changed")
-            }
-        }
-        guard stringAttribute(current, kAXSubroleAttribute) != kAXSecureTextFieldSubrole as String else {
-            return skip("secure field")
-        }
         return true
     }
 
@@ -137,29 +91,6 @@ final class TranscriptInserter: TranscriptInserting {
         // Fixed reason labels only: never log transcript, clipboard, or field contents.
         logger.info("Automatic paste skipped: \(String(describing: reason), privacy: .public)")
         return false
-    }
-
-    private func focusedElement() -> AXUIElement? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeDowncast(value, to: AXUIElement.self)
-    }
-
-    private func stringAttribute(_ element: AXUIElement, _ name: String) -> String {
-        var value: CFTypeRef?
-        AXUIElementCopyAttributeValue(element, name as CFString, &value)
-        return value as? String ?? ""
-    }
-
-    private func selectedRange(_ element: AXUIElement) -> CFRange? {
-        var value: CFTypeRef?
-        guard AXUIElementCopyAttributeValue(element, kAXSelectedTextRangeAttribute as CFString, &value) == .success,
-              let value, CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
-        let axValue = unsafeDowncast(value, to: AXValue.self)
-        guard AXValueGetType(axValue) == .cfRange else { return nil }
-        var range = CFRange()
-        return AXValueGetValue(axValue, .cfRange, &range) ? range : nil
     }
 }
 
