@@ -1,8 +1,8 @@
 # In-app updates
 
-On Air uses one Sparkle 2.10.0 standard updater, shared by the menu bar dropdown, the application menu when Settings is open, and the Updates section in Settings. Settings shows the installed version, an automatic-check preference, and the check result. Sparkle supplies the normal macOS update, download, installation, error, and relaunch windows.
+On Air uses one Sparkle 2.10.0 standard updater, shared by the application menu when Settings is open and the Updates section in Settings. The menu bar dropdown keeps its existing Settings and Quit commands without an additional update item. Settings shows the installed version, an automatic-check preference, and the check result. Sparkle supplies the normal macOS update, download, installation, error, and relaunch windows.
 
-Automatic checks run daily by default; users can disable them. Downloads and installations require a user action. Scheduled discoveries change the menu to **Update Available…** and show the available version in Settings. They do not bring On Air to the foreground or open an update alert. Selecting the reminder brings Sparkle's existing update session forward instead of starting a second one.
+Automatic checks run daily by default; users can disable them. Downloads and installations require a user action. Scheduled discoveries change the Settings button and application menu command to **Update Available…** and show the available version in Settings. They do not bring On Air to the foreground or open an update alert. Selecting the reminder brings Sparkle's existing update session forward instead of starting a second one.
 
 Manual checks are unavailable during recording, transcription, or unresolved Copy/Retry recovery. If installation was already requested before dictation began, Sparkle's relaunch delegate waits until that work is resolved. This does not change the recording glow, status text, capture target, or paste behavior.
 

@@ -23,7 +23,7 @@ protocol UpdateDriving: AnyObject {
     func check()
 }
 
-/// One updater shared by Settings and both menus. Sparkle owns its persisted
+/// One updater shared by Settings and the application menu. Sparkle owns its persisted
 /// preferences; this model never changes the app's settings or Keychain items.
 @Observable @MainActor
 final class UpdateModel: UpdateDriverDelegate {

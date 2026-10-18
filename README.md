@@ -101,6 +101,6 @@ See [benchmark results](docs/BENCHMARKS.md), [testing details](docs/TESTING.md),
 
 ### In-app updates
 
-On Air integrates Sparkle 2.10.0. **Check for Updates…** is available in the menu bar dropdown, the application menu while Settings is open, and the Updates section in Settings. Automatic daily checks can be switched off; downloading and installing remain user-controlled. Background discoveries add a quiet menu/Settings reminder without activating the app. Restart waits for recording, transcription, and pending Copy/Retry work to finish.
+On Air integrates Sparkle 2.10.0. **Check for Updates…** is available in the Updates section in Settings and the application menu while Settings is open. The menu bar dropdown stays uncluttered with Settings and Quit. Automatic daily checks can be switched off; downloading and installing remain user-controlled. Background discoveries add a quiet reminder in Settings and the application menu without activating the app. Restart waits for recording, transcription, and pending Copy/Retry work to finish.
 
 Updates preserve the app's identity, saved preferences, and Keychain service. Versions through 1.0.6 require one manual replacement to gain this updater. See [update behavior and validation](docs/UPDATING.md) and [release operations](docs/RELEASING.md).

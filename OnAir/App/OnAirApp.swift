@@ -8,7 +8,7 @@ struct OnAirApp: App {
     var body: some Scene {
         MenuBarExtra {
             OnAirMenu(controller: delegate.controller, onboarding: delegate.onboarding.model,
-                      updates: delegate.updates, openSetup: delegate.showSetup)
+                      openSetup: delegate.showSetup)
         } label: {
             Image(systemName: delegate.controller.isListening ? "record.circle.fill" : delegate.controller.isTranscribing ? "ellipsis" : "waveform")
                 .symbolRenderingMode(.monochrome)
@@ -32,7 +32,6 @@ struct OnAirApp: App {
 private struct OnAirMenu: View {
     let controller: PrototypeController
     let onboarding: OnboardingModel
-    let updates: UpdateModel
     let openSetup: () -> Void
     @Environment(\.openSettings) private var openSettings
     var body: some View {
@@ -52,7 +51,6 @@ private struct OnAirMenu: View {
             openSettings()
         }
         .keyboardShortcut(",")
-        Button(updates.buttonTitle, action: updates.check).disabled(!updates.canCheck)
         Divider()
         Button("Quit On Air") { NSApp.terminate(nil) }.keyboardShortcut("q")
     }
