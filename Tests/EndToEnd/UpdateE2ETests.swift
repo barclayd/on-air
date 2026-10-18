@@ -11,6 +11,7 @@ final class UpdateE2ETests: XCTestCase {
         XCTAssertTrue(initial.bool("updatesAutomatic"))
         try app.send("automaticUpdates", ["enabled": false])
         try app.send("checkUpdatesMenu")
+        _ = try app.wait("native menu starts the first update check") { $0.number("updatesChecks") == 1 }
         try app.send("checkUpdates")
         let checking = try app.send("snapshot")
         XCTAssertEqual(checking.number("updatesChecks"), 1)
@@ -27,6 +28,7 @@ final class UpdateE2ETests: XCTestCase {
         try app.send("updateResult", ["result": "error"])
         XCTAssertTrue(try app.send("snapshot").bool("updatesCanCheck"))
         try app.send("checkUpdatesMenu")
+        _ = try app.wait("native menu starts a new check after an error") { $0.number("updatesChecks") == 2 }
         try app.send("updateResult", ["result": "current"])
         let current = try app.send("snapshot")
         XCTAssertEqual(current.raw["updatesStatus"] as? String, "On Air is up to date.")

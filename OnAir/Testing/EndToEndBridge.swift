@@ -127,8 +127,15 @@ final class EndToEndBridge {
         switch command["action"] as? String {
         case "checkUpdates": updateModel?.check()
         case "checkUpdatesMenu":
-            guard let (menu, index) = updateCommand(in: NSApp.mainMenu) else { throw BridgeError.invalidCommand }
+            guard let (menu, _) = updateCommand(in: NSApp.mainMenu) else { throw BridgeError.invalidCommand }
+            // SwiftUI rebuilds and validates commands when their menu opens.
+            // update() alone does not run that delegate callback, and can leave
+            // a stale disabled item behind. Re-find the item after rebuilding.
+            menu.delegate?.menuNeedsUpdate?(menu)
             menu.update()
+            guard let (_, index) = updateCommand(in: menu), menu.items[index].isEnabled else {
+                throw BridgeError.invalidCommand
+            }
             menu.performActionForItem(at: index)
         case "automaticUpdates": updateModel?.setAutomaticallyChecks(command["enabled"] as? Bool ?? false)
         case "updateResult":
