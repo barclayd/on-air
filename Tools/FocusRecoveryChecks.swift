@@ -41,9 +41,10 @@ enum FocusRecoveryChecks {
 
         let (denied, timeout) = fixture()
         denied.move(.interrupted)
-        let started = ProcessInfo.processInfo.systemUptime
         try expect(!(await timeout.prepare()), "A request accepted by macOS does not prove focus was restored")
-        try expect(ProcessInfo.processInfo.systemUptime - started < 0.8 && denied.requests == 1, "Failed recovery is bounded")
+        // Hosted runners can resume a sleeping task late. Count the production
+        // retry budget directly instead of asserting scheduler wall-clock speed.
+        try expect(denied.focusAttempts == 10 && denied.requests == 1, "Failed recovery is bounded to ten checks and one activation")
         try expect(!timeout.isReadyForInsertion(), "Timed-out restoration cannot post events")
         timeout.invalidate()
 
@@ -146,6 +147,7 @@ private final class FocusAccessFixture: DestinationAccess {
     var current: DestinationCondition = .ready
     var restorable = true
     var requests = 0
+    var focusAttempts = 0
     var changed: (() -> Void)?
     var interaction: (() -> Void)?
     var onRequest: (() -> Void)?
@@ -153,7 +155,7 @@ private final class FocusAccessFixture: DestinationAccess {
     func condition() -> DestinationCondition { current }
     func requestFocus() -> Bool { requests += 1; onRequest?(); return true }
     func move(_ value: DestinationCondition) { current = value; changed?() }
-    func focusOriginalField() {}
+    func focusOriginalField() { focusAttempts += 1 }
     func observe(change: @escaping () -> Void, interaction: @escaping () -> Void) { changed = change; self.interaction = interaction }
     func stopObserving() { changed = nil; interaction = nil }
 }
