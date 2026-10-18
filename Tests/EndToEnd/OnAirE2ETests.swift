@@ -369,13 +369,13 @@ final class OnAirE2ETests: XCTestCase {
         XCTAssertEqual(final.number("transcriptionRetries"), 0, "Formatting must not request another transcription")
     }
 
-    func testFormattedVersionIsRetainedForCopyWhenFocusChanges() throws {
+    func testFormattedVersionIsRetainedForCopyWhenDestinationChanges() throws {
         try launch()
         try app.send("transcription", ["delay": 0.2, "text": "Version one dot two dot six."])
         try startHold()
         try app.wait("settled hold") { $0.number("presence") > 0.9 }
         try app.up()
-        try app.send("focus", ["field": 2])
+        try app.send("destinationEdited")
         let ready = try app.wait("formatted copy available") { $0.idle && !$0.status.hasPrefix("Hold") }
         XCTAssertEqual(ready.number("pasteCount"), 0)
         XCTAssertEqual(ready.raw["pendingTranscript"] as? String, "Version 1.2.6.")
@@ -427,13 +427,13 @@ final class OnAirE2ETests: XCTestCase {
         XCTAssertEqual(final.number("transcriptionRetries"), 1)
     }
 
-    func testChangedFocusKeepsResultForExplicitCopy() throws {
+    func testEditedDestinationKeepsResultForExplicitCopy() throws {
         try launch()
         try app.send("transcription", ["delay": 0.2, "text": "Do not paste into the other field."])
         try startHold()
         try app.wait("settled hold") { $0.number("presence") > 0.9 }
         try app.up()
-        try app.send("focus", ["field": 2])
+        try app.send("destinationEdited")
         let ready = try app.wait("result available for copy") { $0.idle && $0.status == "Transcript ready — Copy from menu" }
         XCTAssertEqual(ready.number("pasteCount"), 0)
         XCTAssertEqual(ready.raw["pendingTranscript"] as? String, "Do not paste into the other field.")
@@ -467,7 +467,7 @@ final class OnAirE2ETests: XCTestCase {
         try app.send("transcription", ["delay": 0.1])
         try startHold()
         try app.wait("settled hold") { $0.number("presence") > 0.9 }
-        try app.send("focus", ["field": 4])
+        try app.send("destinationEdited")
         try app.up()
         try app.wait("uncopied result") { $0.idle && !$0.status.hasPrefix("Hold") }
         let next = try startHold()

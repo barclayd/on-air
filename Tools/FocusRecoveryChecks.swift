@@ -51,8 +51,19 @@ enum FocusRecoveryChecks {
         let (moved, deliberate) = fixture()
         moved.interaction?()
         moved.move(.interrupted)
-        try expect(!(await deliberate.prepare()) && moved.requests == 0, "User navigation must not be reversed automatically")
+        moved.onRequest = { moved.move(.ready) }
+        try expect(await deliberate.prepare(), "Earlier navigation does not retarget the captured dictation")
+        try expect(moved.requests == 1 && deliberate.isReadyForInsertion(), "The original unchanged field remains the insertion target")
         deliberate.invalidate()
+
+        let (clicked, clickedAway) = fixture()
+        clicked.interaction?()
+        clicked.move(.interrupted)
+        try expect(clicked.requests == 0, "Clicking away does not restore focus while recording")
+        clicked.onRequest = { clicked.move(.ready) }
+        try expect(await clickedAway.prepare(), "A prior click away allows restoration when the transcript is ready")
+        try expect(clicked.requests == 1 && clickedAway.isReadyForInsertion(), "Click-away recovery verifies the original destination")
+        clickedAway.invalidate()
 
         let (menuInput, stillFocused) = fixture()
         menuInput.interaction?()
@@ -61,10 +72,11 @@ enum FocusRecoveryChecks {
         stillFocused.invalidate()
 
         let (field, differentField) = fixture()
-        field.move(.changed)
+        field.interaction?()
+        field.move(.interrupted)
         field.move(.ready)
-        try expect(!(await differentField.prepare()), "Moving fields and back does not silently re-enable automatic insertion")
-        try expect(field.requests == 0, "Same-app field changes never trigger automatic activation")
+        try expect(await differentField.prepare(), "Clicking away and back preserves the original destination")
+        try expect(field.requests == 0, "Returning to the original field needs no activation")
         differentField.invalidate()
 
         let (edited, modified) = fixture()
@@ -90,17 +102,17 @@ enum FocusRecoveryChecks {
         let (changing, changedDuringRestore) = fixture()
         changing.move(.interrupted)
         changing.onRequest = {
-            changing.move(.changed)
+            changing.move(.unavailable)
             changing.move(.ready)
         }
-        try expect(!(await changedDuringRestore.prepare()), "A field change during restoration remains disqualifying even if focus returns")
+        try expect(!(await changedDuringRestore.prepare()), "A target edit during restoration remains disqualifying even if undone")
         changedDuringRestore.invalidate()
 
         let (changingAfter, changedAfterPrepare) = fixture()
         try expect(await changedAfterPrepare.prepare(), "Prepare before a later field change")
-        changingAfter.move(.changed)
+        changingAfter.move(.unavailable)
         changingAfter.move(.ready)
-        try expect(!changedAfterPrepare.isReadyForInsertion(), "A field change after preparation cannot be erased by returning focus")
+        try expect(!changedAfterPrepare.isReadyForInsertion(), "A target edit after preparation cannot be erased by undoing it")
         changedAfterPrepare.invalidate()
 
         let (late, recheck) = fixture()
@@ -130,7 +142,7 @@ enum FocusRecoveryChecks {
         try expect(lockAccess.changed == nil && lockAccess.interaction == nil, "Invalidation tears down observers")
 
         let (retainedAccess, retained) = fixture()
-        retainedAccess.move(.changed)
+        retainedAccess.move(.unavailable)
         retained.stopMonitoring()
         try expect(retainedAccess.changed == nil, "Retained results do not keep global observers alive")
         try expect(!(await retained.prepare()), "Retention does not silently re-enable a changed destination")

@@ -16,10 +16,10 @@ final class FocusRecoveryE2ETests: XCTestCase {
     private func recovered() throws -> Snapshot {
         try app.wait("text retained") { $0.idle && $0.number("pendingTranscriptCount") > 0 }
     }
-    private func finishWithChangedField(_ field: Int, text: String) throws {
+    private func finishWithEditedDestination(text: String) throws {
         try app.send("transcription", ["delay": 0.1, "text": text])
         try hold()
-        try app.send("focus", ["field": field])
+        try app.send("destinationEdited")
         try app.up()
         _ = try recovered()
     }
@@ -73,16 +73,93 @@ final class FocusRecoveryE2ETests: XCTestCase {
         XCTAssertEqual(copied.number("pendingTranscriptCount"), 0)
     }
 
-    func testDeliberateNavigationSuppressesAutomaticRestoration() throws {
+    func testEarlierNavigationNeverRetargetsTheDictation() throws {
         try launch()
         try hold()
         try app.send("userInteraction")
         try app.send("focusInterruption")
         try app.up()
-        let result = try recovered()
+        let result = try app.wait("captured target survives navigation") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(result.number("restorationRequests"), 1)
+        XCTAssertEqual(result.raw["pastedFields"] as? [Int], [0])
+        XCTAssertEqual(result.raw["pastedText"] as? String, "Keep these words.")
+    }
+
+    func testClickingAnotherAppDuringHoldRestoresTheOriginalInputAfterRelease() throws {
+        try launch()
+        try hold()
+        try app.send("pointerInteraction")
+        let clicked = try app.send("focusInterruption")
+        XCTAssertTrue(clicked.bool("meterRunning"))
+        XCTAssertEqual(clicked.status, "Listening")
+        XCTAssertEqual(clicked.number("restorationRequests"), 0)
+        XCTAssertEqual(clicked.number("pasteCount"), 0)
+        try app.up()
+        let result = try app.wait("click-away transcript reaches original input") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(result.number("restorationRequests"), 1)
+        XCTAssertEqual(result.raw["pastedFields"] as? [Int], [0])
+        XCTAssertEqual(result.raw["pastedText"] as? String, "Keep these words.")
+        XCTAssertEqual(result.number("pendingTranscriptCount"), 0)
+    }
+
+    func testClickingAnotherFieldDuringHoldRestoresTheFieldCapturedAtFnDown() throws {
+        try launch()
+        try app.send("focus", ["field": 7])
+        try hold()
+        try app.send("pointerInteraction")
+        let clicked = try app.send("focus", ["field": 2])
+        XCTAssertEqual(clicked.number("restorationRequests"), 0)
+        XCTAssertEqual(clicked.number("pasteCount"), 0)
+        try app.up()
+        let result = try app.wait("original field receives text instead of the clicked field") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(result.raw["pastedFields"] as? [Int], [7])
+        XCTAssertEqual(result.number("restorationRequests"), 1)
+        XCTAssertEqual(result.number("pendingTranscriptCount"), 0)
+        try app.send("focus", ["field": 9])
+        try hold()
+        try app.send("pointerInteraction")
+        try app.send("focus", ["field": 2])
+        try app.up()
+        let next = try app.wait("the next Fn hold captures its own destination") { $0.idle && $0.number("pasteCount") == 2 }
+        XCTAssertEqual(next.raw["pastedFields"] as? [Int], [7, 9])
+    }
+
+    func testClickingAwayWhileTranscribingStillReturnsToTheOriginalInput() throws {
+        try launch()
+        try app.send("transcription", ["delay": 0.5])
+        try hold()
+        try app.up()
+        try app.send("pointerInteraction")
+        try app.send("focus", ["field": 2])
+        let result = try app.wait("click during transcription is recovered") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(result.raw["pastedFields"] as? [Int], [0])
+        XCTAssertEqual(result.number("restorationRequests"), 1)
+    }
+
+    func testClickingAwayAndBackDoesNotLoseTheTranscript() throws {
+        try launch()
+        try hold()
+        try app.send("pointerInteraction")
+        try app.send("focus", ["field": 2])
+        try app.send("pointerInteraction")
+        try app.send("focus", ["field": 0])
+        try app.up()
+        let result = try app.wait("returned destination receives text") { $0.idle && $0.number("pasteCount") == 1 }
+        XCTAssertEqual(result.raw["pastedFields"] as? [Int], [0])
         XCTAssertEqual(result.number("restorationRequests"), 0)
+    }
+
+    func testNewClickDuringRestorationCancelsTheInFlightPaste() throws {
+        try launch()
+        try hold()
+        try app.send("pointerInteraction")
+        try app.send("focusInterruption", ["restores": false])
+        try app.up()
+        try app.wait("restoration begins") { $0.number("restorationRequests") == 1 }
+        try app.send("pointerInteraction")
+        let result = try recovered()
         XCTAssertEqual(result.number("pasteCount"), 0)
-        XCTAssertEqual(result.raw["pendingTranscript"] as? String, "Keep these words.")
+        XCTAssertEqual(result.number("restorationRequests"), 1)
     }
 
     func testEditedDestinationKeepsTextWithoutRestoring() throws {
@@ -108,7 +185,7 @@ final class FocusRecoveryE2ETests: XCTestCase {
 
     func testSuccessfulNextDictationDoesNotEraseEarlierUncopiedResult() throws {
         try launch()
-        try finishWithChangedField(2, text: "First result.")
+        try finishWithEditedDestination(text: "First result.")
         try app.send("transcription", ["delay": 0.1, "text": "Second result."])
         try hold()
         try app.up()
@@ -121,8 +198,8 @@ final class FocusRecoveryE2ETests: XCTestCase {
 
     func testMultipleUndeliveredResultsCopyInOrder() throws {
         try launch()
-        try finishWithChangedField(2, text: "First result.")
-        try finishWithChangedField(3, text: "Second result.")
+        try finishWithEditedDestination(text: "First result.")
+        try finishWithEditedDestination(text: "Second result.")
         let first = try app.send("copy")
         XCTAssertEqual(first.raw["copiedText"] as? String, "First result.")
         XCTAssertEqual(first.raw["pendingTranscript"] as? String, "Second result.")
@@ -133,7 +210,7 @@ final class FocusRecoveryE2ETests: XCTestCase {
 
     func testCopyFailureDoesNotDiscardTheOnlyRecovery() throws {
         try launch()
-        try finishWithChangedField(1, text: "Recoverable text.")
+        try finishWithEditedDestination(text: "Recoverable text.")
         try app.send("copyFailure")
         let failed = try app.send("copy")
         XCTAssertEqual(failed.raw["pendingTranscript"] as? String, "Recoverable text.")
@@ -145,7 +222,7 @@ final class FocusRecoveryE2ETests: XCTestCase {
 
     func testCopyingOlderResultDoesNotClearCurrentMicrophoneFailure() throws {
         try launch()
-        try finishWithChangedField(2, text: "Earlier result.")
+        try finishWithEditedDestination(text: "Earlier result.")
         try hold()
         try app.send("inputChanged")
         let copied = try app.send("copy")
@@ -160,7 +237,7 @@ final class FocusRecoveryE2ETests: XCTestCase {
 
     func testOldRecoveryExpiryDoesNotInterruptANewHold() throws {
         try launch(lifetime: 1.8)
-        try finishWithChangedField(2, text: "Expiring result.")
+        try finishWithEditedDestination(text: "Expiring result.")
         try hold()
         let expired = try app.wait("old result expires during the next hold") {
             $0.bool("listening") && $0.number("pendingTranscriptCount") == 0
@@ -201,7 +278,7 @@ final class FocusRecoveryE2ETests: XCTestCase {
 
     func testRecoveryQueueIsBounded() throws {
         try launch()
-        for index in 1...6 { try finishWithChangedField(index, text: "Result \(index).") }
+        for index in 1...6 { try finishWithEditedDestination(text: "Result \(index).") }
         let result = try app.send("snapshot")
         XCTAssertEqual(result.number("pendingTranscriptCount"), 5)
         XCTAssertEqual(result.raw["pendingTranscript"] as? String, "Result 2.")

@@ -20,7 +20,7 @@ xcodebuild -project OnAir.xcodeproj -scheme OnAir \
 open ".build/Build/Products/Debug/On Air.app"
 ```
 
-The menu bar provides status, **Set up On Air…**, **Settings…**, **Quit On Air**, and **Copy transcript** or **Retry transcription** when needed. Settings is also available through the standard On Air application menu and **⌘,** while the app is active. The app appears in the Dock while setup or Settings is open; closing the last window returns to menu-bar-only operation.
+The menu bar provides status, **Settings…**, **Quit On Air**, and **Copy transcript** or **Retry transcription** when needed. **Set up On Air…** appears only until setup is completed. Settings is also available through the standard On Air application menu and **⌘,** while the app is active. The app appears in the Dock while setup or Settings is open; closing the last window returns to menu-bar-only operation.
 
 ## Settings
 
@@ -37,7 +37,7 @@ The signed functional Release build is installed at `/Users/danbarclay/Applicati
 
 ## macOS setup
 
-On first launch, a native setup window follows the supplied On Air Onboarding design. It can be closed at any time and reopened from **Set up On Air…** in the menu bar.
+On first launch, a native setup window follows the supplied On Air Onboarding design. It can be closed at any time and reopened from **Set up On Air…** in the menu bar until setup is completed. Finishing setup removes that menu item immediately and on subsequent launches.
 
 1. **Microphone** requests the native permission when its switch is clicked. Previously denied access opens Privacy & Security → Microphone; restricted access explains that administrator help is needed.
 2. **Accessibility** opens the relevant privacy pane so you can enable On Air. On macOS 27 this pane is named **Device Control and Data Access**. Accessibility covers both the existing global fn monitor and pasting; On Air does not request separate Input Monitoring access.
@@ -63,7 +63,7 @@ Completed setup is remembered. Subsequent launches reopen setup if a required pe
 - Sleep, session lock, or a display configuration change clears the overlay and stops capture.
 - The red glow subtly varies its height and pulse intensity across the screen. Voice level drives the strength; a smooth decorative drift gives each hold a different starting balance. This is not sound-source tracking.
 - Reduce Motion uses a quiet, static glow and line with colour/opacity transitions.
-- Only a completed transcript is pasted. If another app takes focus without user navigation, On Air makes one bounded attempt to restore the original app, window and field, verifies the selection and content, then pastes. It never forces focus back during recording. Changed fields/content, deliberate navigation, closed windows, secure fields and unverifiable targets use the existing **Copy transcript** menu action. The glow and menu UI are unchanged.
+- Fn-down fixes the destination for that dictation. Clicking another app or another field while recording or awaiting transcription does not retarget the words. Once the final transcript is ready, On Air makes one bounded attempt to restore the original app, window and field, verifies its selection and content, then pastes. It never forces focus back during recording. Changed original content/selection, closed windows, secure fields, unverifiable targets and fresh input during restoration use the existing **Copy transcript** action. The recording UI is unchanged.
 - Clipboard items and formats are restored after ⌘V; a newer user copy is never overwritten.
 - If the clipboard cannot be fully preserved, ordinary single-line dictation uses Unicode keyboard input without changing the clipboard. Multiline/control text uses **Copy transcript** instead. The same destination and modifier checks apply; compatibility of direct input depends on the receiving app.
 - On API failure or a 20-second finalisation timeout, one failed clip stays in memory for up to five minutes for **Retry transcription**. Retry never activates the microphone. A new hold, success, sleep/lock, or quitting clears the failed audio. Up to five uninserted transcripts stay in memory for five minutes each, including across new holds and successful dictations; **Copy transcript** consumes them oldest first. Sleep/lock or quitting clears them. No transcript history is written to disk.
@@ -81,7 +81,7 @@ Each release includes a versioned DMG and an identical `On-Air.dmg` for the webs
 Tools/test.sh
 ```
 
-Runs 65 app-process E2E tests and two visual regression tests covering twelve reference images and the glow intensity scale, plus checks for onboarding, settings, credential parsing, PCM/WAV framing, version formatting, clipboard preservation, and focus recovery. Coverage includes first-launch setup, permission denial/revocation, key-gated readiness, preservation of saved notes/keys, automatic reuse of existing access, optional notes review and validation, shared-window lifecycle, native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
+Runs 70 app-process E2E tests and two visual regression tests covering twelve reference images and the glow intensity scale, plus checks for onboarding, settings, credential parsing, PCM/WAV framing, version formatting, clipboard preservation, and focus recovery. Coverage includes first-launch setup, permission denial/revocation, key-gated readiness, preservation of saved notes/keys, automatic reuse of existing access, optional notes review and validation, shared-window lifecycle, native Settings commands, notes persistence, key verification/removal, safe settings changes during dictation, final-only pasting, formatted versions in live/retry/Copy results, changed focus, failure/retry, fn handling, permissions, lifecycle interruptions, and native overlay rendering. Each E2E test launches a fresh app with controlled keyboard, microphone, transcription, credentials, and insertion inputs. It does not record you or call OpenAI. Test controls are excluded from normal Debug and Release builds.
 
 Requires Xcode and a logged-in macOS desktop session. Test logs and window captures go to `.build/e2e/`. See [testing documentation](docs/TESTING.md) for coverage, limitations, focused runs, and updating visual references.
 

@@ -211,6 +211,7 @@ final class EndToEndBridge {
         case "destinationClosed": insertion.accesses.last?.available = false; insertion.accesses.last?.changed?()
         case "destinationEdited": insertion.accesses.last?.unchanged = false; insertion.accesses.last?.changed?()
         case "userInteraction": insertion.accesses.last?.interaction?()
+        case "pointerInteraction": insertion.accesses.last?.interaction?()
         case "copyFailure": insertion.copySucceeds = !(command["fail"] as? Bool ?? true)
         case "copy": controller.copyTranscript()
         case "retry": controller.retryTranscription()
@@ -529,7 +530,7 @@ final class FixtureDestinationAccess: DestinationAccess {
     func condition() -> DestinationCondition {
         guard canRestore else { return .unavailable }
         if interrupted { return .interrupted }
-        return owner?.field == original ? .ready : .changed
+        return owner?.field == original ? .ready : .interrupted
     }
     func requestFocus() -> Bool {
         restorationRequests += 1
