@@ -131,3 +131,7 @@ This opt-in check compiles the production destination adapter and transcript ins
 Native fixture coverage does not establish compatibility with every third-party editor. Before release, also check physical Fn dictation in Codex, Chrome and Slack, including full-screen Spaces, app focus theft, intentional navigation and a destination that closes mid-transcription. The normal glow, status text and menu must remain unchanged.
 
 On 18 October 2026, the updated native integration check passed all nine checks on this Mac, including actual clicks into another app and another field, restoration of the original selection, paste delivery, navigation before restoration and clipboard preservation. This is fixture-window coverage, not a claim that physical Fn, microphone capture or every third-party editor was retested.
+
+## Updates
+
+See [UPDATING.md](UPDATING.md) for the updater checks, actual Sparkle/signature fixtures, nonpublishing release validation, and the final signed replacement acceptance test. Keep desktop tests serial and the session unlocked; macOS can refuse native keyboard/menu dispatch while showing the lock screen.

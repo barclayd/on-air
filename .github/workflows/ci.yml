@@ -15,6 +15,8 @@ on:
       - 'Tools/VersionFormattingChecks.swift'
       - 'Tools/SettingsChecks.swift'
       - 'Tools/OnboardingChecks.swift'
+      - 'Tools/UpdateChecks.swift'
+      - 'Tools/check-update-signatures.py'
       - 'Tools/RenderPreview.swift'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
@@ -33,6 +35,8 @@ on:
       - 'Tools/VersionFormattingChecks.swift'
       - 'Tools/SettingsChecks.swift'
       - 'Tools/OnboardingChecks.swift'
+      - 'Tools/UpdateChecks.swift'
+      - 'Tools/check-update-signatures.py'
       - 'Tools/RenderPreview.swift'
       - '.github/workflows/ci.yml'
       - '.github/workflows/release.yml'
@@ -61,6 +65,8 @@ jobs:
         run: Tools/test-core.sh
       - name: Build universal app and exercise DMG packaging without credentials
         run: python3 Tools/release.py package --tag v0.0.0-alpha.1 --build 1 --unsigned
+      - name: Reject unsigned, altered, and wrong-key update feeds and downloads
+        run: python3 Tools/check-update-signatures.py
       - name: Retain packaging evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7

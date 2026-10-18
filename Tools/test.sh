@@ -8,7 +8,7 @@ mkdir -p "$test_root/artifacts"
 "$project_root/Tools/test-core.sh"
 
 echo "Building the isolated On Air E2E app…"
-if ! xcodebuild -project OnAir.xcodeproj -scheme OnAir -configuration Debug \
+if ! xcodebuild -project OnAir.xcodeproj -scheme OnAir -configuration Debug -packageAuthorizationProvider netrc \
     -derivedDataPath "$test_root/DerivedData" \
     PRODUCT_NAME=OnAirE2E PRODUCT_BUNDLE_IDENTIFIER=com.danbarclay.onair.e2e \
     'SWIFT_ACTIVE_COMPILATION_CONDITIONS=DEBUG E2E_TESTING' CODE_SIGNING_ALLOWED=NO \

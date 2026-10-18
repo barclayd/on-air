@@ -82,3 +82,11 @@ Settings provides eleven integer levels (0–10), persisted as 0–1 in `recordi
 | 10 | 1 | 1.18 | 1.12 | 1.25 |
 
 The mapping interpolates linearly on either side of level 5. Limiting the upper half keeps peak voice soft and translucent; minimum brightness and height keep silence visible. All eleven levels were rendered on light and dark backgrounds for tuning. Colour, softness and animation speed retain the original design. Spatial drift and wave height get the movement multiplier. Changes settle over 240 ms from the current displayed value, including if the slider reverses midway. Reduce Motion applies the new level immediately without pulsing. No visual preference reconfigures the transcription connection or alters the blue finishing wave.
+
+## Native updates — 18 October 2026
+
+Use one Sparkle 2.10.0 updater for Settings and menus. Sparkle owns its preferences and standard download/install/relaunch UI. Daily checks are enabled by default and can be disabled; automatic downloading/installing and system profiling are disabled. Scheduled discoveries use Sparkle's gentle-reminder delegate and update the menu and Settings without activating On Air. Manual checking is unavailable while dictating or holding unresolved Copy/Retry work; installation already in progress waits for that work before relaunching.
+
+Use GitHub's latest stable release asset as the HTTPS appcast endpoint. Upload the complete signed feed and versioned DMG in a draft and publish atomically. Keep the existing Developer ID, bundle identity, UserDefaults keys, and Keychain service. Require EdDSA validation for the feed and archive before extraction; set the signed-feed failure expiration to zero so an invalid feed never becomes acceptable merely because time passes. Begin with full downloads. No changes to recording UI or focus-recovery behavior.
+
+Sources: [programmatic setup](https://sparkle-project.org/documentation/programmatic-setup/), [gentle reminders](https://sparkle-project.org/documentation/gentle-reminders/), [configuration](https://sparkle-project.org/documentation/customization/).

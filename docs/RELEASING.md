@@ -2,7 +2,7 @@
 
 The repository has two GitHub Actions workflows:
 
-- **Build and package checks** runs on pull requests and pushes to main that change the app, Xcode project, app tests, packaging/test tools, or either app workflow. Website, documentation, and unrelated GitHub metadata changes skip this workflow. It can also be run manually. It runs eleven release tests, the audio/credential/clipboard core checks, builds both Mac architectures, verifies the compiled app icon is included, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
+- **Build and package checks** runs on pull requests and pushes to main that change the app, Xcode project, app tests, packaging/test tools, or either app workflow. Website, documentation, and unrelated GitHub metadata changes skip this workflow. It can also be run manually. It runs release validation tests and real Sparkle signature checks, the audio/credential/clipboard core checks, builds both Mac architectures, verifies the compiled app icon is included, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
 - **Release On Air** runs on version tags or manually. It signs with Developer ID, notarizes and staples both the app and its DMG, checks Gatekeeper, and calculates the final checksum. Publishing uses a separate job with repository write permission and no Apple credentials.
 
 Both use the stable `macos-26` runner and Xcode 26.6. Action versions are pinned to reviewed commit hashes. The desktop E2E suite and macOS 27 visual baselines remain a separate `Tools/test.sh` check on a logged-in Mac; the hosted checks do not claim to replace those or physical microphone testing.
@@ -16,6 +16,7 @@ Every signed release includes:
 - `On-Air-vMAJOR.MINOR.PATCH.dmg` (including any prerelease suffix), for a particular version.
 - `On-Air.dmg`, an identical copy with a stable filename for the website.
 - A `.sha256` file for each DMG, plus `release.json` recording the version, source commit, build number, both filenames, and their shared checksum.
+- `appcast.xml`, signed with the app’s Sparkle key, its `.sha256`, and `appcast_sha256` in the manifest (from the first Sparkle-enabled release onward).
 
 The stable copy is made after signing, notarization, stapling, and Gatekeeper verification. Publication verifies both copies against the manifest and their own checksum files. Unsigned CI packages instead use `On-Air-unsigned.dmg` and cannot be published by the release workflow.
 
@@ -42,6 +43,7 @@ In the repository's **Settings → Environments**, create `release`. Add these s
 | `APPLE_NOTARY_KEY_P8_BASE64` | Base64 of the Apple team API private key |
 | `APPLE_NOTARY_KEY_ID` | Apple API key ID |
 | `APPLE_NOTARY_ISSUER_ID` | Apple API issuer UUID |
+| `SPARKLE_PRIVATE_KEY` | Sparkle Ed25519 private seed exported by the pinned `generate_keys` tool; already base64, do not encode it again |
 
 Set repository or environment variable **`APPLE_TEAM_ID=R2GGK3VN2C`**. No OpenAI credential belongs in Actions; no build or regression check calls OpenAI. Restrict who can push release tags and who can use the release environment. If you configure environment deployment rules, allow `main` for manual previews and the intended `v*` tags for releases.
 
@@ -85,7 +87,7 @@ Assets are assembled in a draft, then the complete release is published. Existin
 
 ## Local packaging checks
 
-Python 3 and Xcode suffice; the app gains no runtime dependencies:
+Python 3 and Xcode suffice; Xcode resolves the pinned Sparkle 2.10.0 package:
 
 ```sh
 python3 -m unittest discover -s Tools/ReleaseTests -v
@@ -94,4 +96,18 @@ python3 Tools/release.py package --tag v0.1.0-beta.1 --build 2 --unsigned --outp
 
 Choose a fresh output directory per run. This exercises the actual universal archive, metadata checks, production-test isolation, drag-to-Applications DMG, and final checksum. It does not change the installed app, open a microphone, use credentials, or call Apple's notary service. It deliberately marks the artifact unpublishable.
 
-The signed mode is the default and requires the same Apple environment variables as Actions. The app is notarized and stapled before DMG creation so its ticket travels with it after copying out of the image; the final DMG is then separately signed, notarized and stapled. Hashing occurs last. Sparkle and Homebrew remain future steps described in [the distribution plan](DISTRIBUTION.md).
+The signed mode is the default and requires the same Apple environment variables as Actions. The app is notarized and stapled before DMG creation so its ticket travels with it after copying out of the image; the final DMG is then separately signed, notarized and stapled. Hashing occurs last. Sparkle update signing follows the final notarization and stapling steps; Homebrew remains optional. See [the updater](UPDATING.md).
+
+## Sparkle signing and publication
+
+The app pins Sparkle 2.10.0 through Swift Package Manager and commits `Package.resolved`. The release script downloads the matching official signing tools and verifies their pinned SHA-256 before extracting only `generate_appcast` and `sign_update`.
+
+Keep the same Developer ID team and `com.danbarclay.onair` bundle identifier. Sign the embedded Downloader, Installer, Autoupdate, Updater app, and framework from the inside out, preserving their original entitlements. Sign the containing app last with its microphone entitlement. Verify the complete nested signature and notarize both app and DMG.
+
+Only after the final DMG is stapled does `generate_appcast` produce its EdDSA signature and the signed feed. The build verifies both signatures, confirms the exact version/build, minimum OS, download URL, and channel, and hashes the feed. Publishing verifies these final hashes and uploads every asset into a draft before making it public. A failed build, signing operation, validation, or upload therefore cannot advance the public feed to an unavailable download.
+
+The stable feed URL is `https://github.com/barclayd/on-air/releases/latest/download/appcast.xml`. Each enclosure points at an immutable versioned DMG. Stable releases advance both the website download and this feed together. Prereleases have a `beta` channel and never become GitHub's latest stable release. The initial implementation uses full downloads and disables delta generation.
+
+The app-specific key was created with Sparkle's `generate_keys --account com.danbarclay.onair.sparkle`. Its public key is in `OnAir/Info.plist`; the private seed is in the maintainer's Keychain and the encrypted `release` environment secret. Keep an independent secure backup before changing machines. Export only to a temporary file with mode 0600, pipe it into `gh secret set SPARKLE_PRIVATE_KEY --env release`, then remove the export. Never commit or upload private keys as artifacts. Build subprocesses do not inherit the secret; signing tools receive it on stdin. Do not regenerate the key per release. Follow Sparkle's documented key-rotation procedure if rotation is necessary.
+
+Because 1.0.6 and older do not contain an updater, users must replace the app manually once to install the first Sparkle-enabled version. Do not delete their preferences or Keychain entries. Thereafter Sparkle replaces the app in place and relaunches it after user confirmation. The final acceptance check before releasing the updater is an actual signed upgrade between two Sparkle-enabled versions on a disposable installation, including retained settings, Keychain access, permissions, and launch-at-login behavior if that feature is added later.

@@ -31,6 +31,7 @@ struct CoreChecks {
         try VersionFormattingChecks.run()
         try await SettingsChecks.run()
         try await OnboardingChecks.run()
+        try await UpdateChecks.run()
 
         let board = NSPasteboard.withUniqueName()
         defer { board.releaseGlobally() }
