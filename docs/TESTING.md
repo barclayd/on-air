@@ -132,6 +132,22 @@ Native fixture coverage does not establish compatibility with every third-party 
 
 On 18 October 2026, the updated native integration check passed all nine checks on this Mac, including actual clicks into another app and another field, restoration of the original selection, paste delivery, navigation before restoration and clipboard preservation. This is fixture-window coverage, not a claim that physical Fn, microphone capture or every third-party editor was retested.
 
+## Local dictation diagnostics
+
+For an instrumented build, enable content-free destination diagnostics with
+`defaults write com.danbarclay.onair dictationDiagnosticsEnabled -bool true`.
+Capture the running app with
+`log stream --level info --style compact --predicate 'process == "On Air" AND subsystem == "com.danbarclay.onair"'`.
+These opt-in events identify the captured app/process, a random destination ID,
+snapshot availability, state changes, the first disqualifying check, accessibility
+attribute/error codes and restoration results. They never include dictated text,
+field/clipboard contents, selections, content digests, window titles or API keys.
+Only state changes are logged while polling. The existing capture, restoration
+and paste decisions are unchanged. Disable with
+`defaults delete com.danbarclay.onair dictationDiagnosticsEnabled` and stop the
+log capture when the investigation finishes. Keep captures local unless the user
+explicitly asks to share them.
+
 ## Updates
 
 See [UPDATING.md](UPDATING.md) for the updater checks, actual Sparkle/signature fixtures, nonpublishing release validation, and the final signed replacement acceptance test. Keep desktop tests serial and the session unlocked; macOS can refuse native keyboard/menu dispatch while showing the lock screen.
