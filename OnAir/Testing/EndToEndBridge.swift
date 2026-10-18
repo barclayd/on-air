@@ -66,7 +66,8 @@ final class EndToEndBridge {
             accessibilityTrusted: { [input] in input.accessibility },
             transcriber: transcription,
             inserter: insertion,
-            glow: glow
+            glow: glow,
+            recoveryLifetime: Double(ProcessInfo.processInfo.environment["ON_AIR_E2E_RECOVERY_LIFETIME"] ?? "300") ?? 300
         )
     }
 
@@ -205,6 +206,12 @@ final class EndToEndBridge {
             transcription.fail = command["fail"] as? Bool ?? false
             transcription.text = command["text"] as? String ?? "This is a completed test transcript."
         case "focus": insertion.field = command["field"] as? Int ?? 1
+        case "focusInterruption":
+            insertion.interrupt(restores: command["restores"] as? Bool ?? true)
+        case "destinationClosed": insertion.accesses.last?.available = false; insertion.accesses.last?.changed?()
+        case "destinationEdited": insertion.accesses.last?.unchanged = false; insertion.accesses.last?.changed?()
+        case "userInteraction": insertion.accesses.last?.interaction?()
+        case "copyFailure": insertion.copySucceeds = !(command["fail"] as? Bool ?? true)
         case "copy": controller.copyTranscript()
         case "retry": controller.retryTranscription()
         case "lifecycle":
@@ -291,6 +298,9 @@ final class EndToEndBridge {
             "screenCount": NSScreen.screens.count,
             "canRetry": controller.canRetry,
             "pendingTranscript": controller.pendingTranscript ?? "",
+            "pendingTranscriptCount": controller.pendingTranscriptCount,
+            "restorationRequests": insertion.accesses.reduce(0) { $0 + $1.restorationRequests },
+            "pastedFields": insertion.pastedFields,
             "pasteCount": insertion.pastes.count,
             "pastedText": insertion.pastes.last ?? "",
             "copiedText": insertion.copied ?? "",
@@ -472,17 +482,64 @@ final class FixtureKeyVerifier: APIKeyVerifying {
 
 @MainActor
 final class FixtureInserter: TranscriptInserting {
-    var field = 0
-    var original = 0
+    var field = 0 { didSet { for access in accesses { access.changed?() } } }
     var pastes: [String] = []
+    var pastedFields: [Int] = []
     var copied: String?
-    func captureDestination() { original = field }
-    func insert(_ transcript: String) async -> Bool {
-        guard original == field else { return false }
+    var copySucceeds = true
+    var accesses: [FixtureDestinationAccess] = []
+    func captureDestination() -> DictationDestination? {
+        let access = FixtureDestinationAccess(owner: self, original: field)
+        accesses.append(access)
+        return DictationDestination(access: access)
+    }
+    func insert(_ transcript: String, into destination: DictationDestination) async -> Bool {
+        guard await destination.prepare(), destination.isReadyForInsertion() else { return false }
         pastes.append(transcript)
+        pastedFields.append(field)
         return true
     }
-    func copy(_ transcript: String) { copied = transcript }
-    func clearDestination() { original = -1 }
+    func copy(_ transcript: String) -> Bool {
+        guard copySucceeds else { return false }
+        copied = transcript
+        return true
+    }
+    func interrupt(restores: Bool) {
+        guard let access = accesses.last else { return }
+        access.interrupted = true
+        access.restores = restores
+        access.changed?()
+    }
+}
+
+@MainActor
+final class FixtureDestinationAccess: DestinationAccess {
+    weak var owner: FixtureInserter?
+    let original: Int
+    let processIdentifier: pid_t = 1234
+    var interrupted = false
+    var available = true
+    var unchanged = true
+    var restores = true
+    var restorationRequests = 0
+    var changed: (() -> Void)?
+    var interaction: (() -> Void)?
+    init(owner: FixtureInserter, original: Int) { self.owner = owner; self.original = original }
+    var canRestore: Bool { available && unchanged }
+    func condition() -> DestinationCondition {
+        guard canRestore else { return .unavailable }
+        if interrupted { return .interrupted }
+        return owner?.field == original ? .ready : .changed
+    }
+    func requestFocus() -> Bool {
+        restorationRequests += 1
+        if restores { interrupted = false; owner?.field = original }
+        return true
+    }
+    func focusOriginalField() {}
+    func observe(change: @escaping () -> Void, interaction: @escaping () -> Void) {
+        self.changed = change; self.interaction = interaction
+    }
+    func stopObserving() { changed = nil; interaction = nil }
 }
 #endif

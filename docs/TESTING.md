@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **49 application E2E tests and one visual regression test comparing twelve images**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes a few minutes on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **65 application E2E tests and two visual regression tests comparing twelve reference images and the glow intensity scale**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes a few minutes on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -113,3 +113,21 @@ The generated WAV comes from `Tools/benchmark_transcription.py`; see `BENCHMARKS
 Recording-glow checks cover immediate persistence, restoration in a new model, invalid saved values, interruptible interpolation and Reduce Motion. The app-process test changes intensity during a hold and verifies one uninterrupted capture/transcription/paste cycle, no connection reset, and persistence after reopening Settings. The visual scale test renders all eleven levels for silence, speech, peak voice and processing on light/dark backgrounds; it checks a visible minimum, progressively stronger output, bounded adjacent changes, clear upper screen, unchanged blue frames and static Reduce Motion. The original twelve golden images still guard the default appearance. To inspect the scale manually, run the preview executable with an output directory followed by `--glow-scale`.
 
 Settings design checks also exercise the actual AppKit slider through pointer drags in both directions, arrow-key events and accessibility increment/decrement actions, including range endpoints, percentage value descriptions, persistence, and zero microphone starts or transcription reconnects. The key-verification test retains empty, error and verified window captures for visual review. Shared notes/key sections are covered by the onboarding tests.
+
+## Focus recovery
+
+`Tools/FocusRecoveryChecks.swift` runs thirty checks of the production destination policy against controlled OS boundaries. It checks unchanged focus, external activation, delayed activation, bounded failure, user navigation, changed/closed/uninspectable targets, field changes during and after preparation (even if focus returns), final validation, cancellation, session invalidation and observer cleanup. It never posts events or moves desktop focus.
+
+Fourteen `FocusRecoveryE2ETests` run the real app/controller with that same production policy and a controlled destination adapter. They cover interruptions during recording and transcription, refused restoration, unchanged UI/status, deliberate navigation, edited/closed destinations, preservation across a successful subsequent dictation, ordered recovery, failed Copy, copying an older result during a new microphone failure, independent expiry during a new hold, session lock during restoration, retries crossing the old expiry deadline and the five-result memory bound. The previous changed-field test still expects the original Copy fallback; the old new-hold-clears-result assertion now verifies retention.
+
+For actual macOS Accessibility and event delivery, run separately from the E2E suite:
+
+```sh
+Tools/test-focus-integration.sh
+```
+
+This opt-in check compiles the production destination adapter and transcript inserter alongside a disposable native editor fixture. It launches two fixture processes, briefly switches focus between their windows, and tests real AX capture, restoration and paste. It also exercises same-app field changes, modified content, keyboard activity in the other app, closed windows and clipboard preservation. It restores the previous foreground app and closes the fixture processes on exit. Existing Accessibility/event-posting access is required; it does not open permission prompts. Do not run it concurrently with another desktop test or interact with the clipboard/windows during the check. It opens no microphone and makes no API calls. Evidence goes to `.build/focus-integration/`.
+
+Native fixture coverage does not establish compatibility with every third-party editor. Before release, also check physical Fn dictation in Codex, Chrome and Slack, including full-screen Spaces, app focus theft, intentional navigation and a destination that closes mid-transcription. The normal glow, status text and menu must remain unchanged.
+
+On 18 October 2026, the native integration check passed all seven checks on this Mac, including actual cross-process focus restoration, paste delivery, user-keyboard navigation detection and clipboard preservation. This is fixture-window coverage, not a claim that physical Fn, microphone capture or every third-party editor was retested.

@@ -19,7 +19,13 @@ final class PrototypeController {
     private var discarded = false
     private var envelope = LevelEnvelope()
     private var issue: String?
-    private(set) var pendingTranscript: String?
+    private struct Recovery {
+        let text: String
+        let expiresAt: Double
+    }
+    private var recoveries: [Recovery] = []
+    var pendingTranscript: String? { recoveries.first?.text }
+    var pendingTranscriptCount: Int { recoveries.count }
     private var retryAudio = Data()
     private var retryExpiry = 0.0
     private var configurationPending = false
@@ -31,6 +37,8 @@ final class PrototypeController {
     @ObservationIgnored private let transcriber: any Transcribing
     @ObservationIgnored private let inserter: any TranscriptInserting
     @ObservationIgnored private let overlay = OverlayWindowController()
+    @ObservationIgnored private var destination: DictationDestination?
+    @ObservationIgnored private let recoveryLifetime: TimeInterval
     @ObservationIgnored private var completion: Task<Void, Never>?
     @ObservationIgnored private var recoveryExpiryTask: Task<Void, Never>?
     @ObservationIgnored private var holdID: UUID?
@@ -45,7 +53,9 @@ final class PrototypeController {
          accessibilityTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
          transcriber: any Transcribing = OpenAITranscriber(),
          inserter: any TranscriptInserting = TranscriptInserter(),
-         glow: GlowPreferences = GlowPreferences()) {
+         glow: GlowPreferences = GlowPreferences(),
+         recoveryLifetime: TimeInterval = 300) {
+        self.recoveryLifetime = recoveryLifetime
         self.glow = glow
         self.keys = keys
         self.meter = meter
@@ -108,7 +118,8 @@ final class PrototypeController {
         guard phase == .idle else { return }
         applyPendingConfigurationIfIdle()
         completion?.cancel()
-        clearRecovery()
+        clearRetry()
+        destination?.stopMonitoring()
         issue = nil
         cycleID = UUID()
         let id = cycleID
@@ -119,9 +130,13 @@ final class PrototypeController {
         discarded = false
         streamedBytes = 0
         packets.removeAll()
-        inserter.captureDestination()
+        destination = inserter.captureDestination()
         phase = .listening
-        guard overlay.show(controller: self) else { phase = .idle; holdID = nil; return }
+        guard overlay.show(controller: self) else {
+            destination?.stopMonitoring()
+            phase = .idle; holdID = nil
+            return
+        }
         transcriber.begin()
         logger.info("Fn hold began")
         switch microphoneAuthorization.status {
@@ -205,25 +220,29 @@ final class PrototypeController {
                 let result = try await (retry ? self.transcriber.retry(audio) : self.transcriber.finish())
                 guard !Task.isCancelled, self.cycleID == id else { return }
                 let text = VersionNumberFormatter.format(result.trimmingCharacters(in: .whitespacesAndNewlines))
-                self.clearRecovery()
+                self.clearRetry()
                 if text.isEmpty { self.issue = "No speech recognised — try again" }
                 else {
-                    let inserted = await self.inserter.insert(text)
+                    let inserted: Bool
+                    if let destination = self.destination {
+                        inserted = await self.inserter.insert(text, into: destination)
+                    } else { inserted = false }
                     guard !Task.isCancelled, self.cycleID == id else { return }
                     if !inserted {
-                        self.pendingTranscript = text
-                        self.expireRecovery(after: 300, id: id)
+                        self.retainTranscript(text)
                     }
                     self.logger.info("Final transcript ready: autoPaste=\(inserted, privacy: .public)")
                 }
+                self.destination?.stopMonitoring()
+                self.destination = nil
                 self.fade()
             } catch {
                 guard !Task.isCancelled, self.cycleID == id else { return }
                 self.transcriber.cancel()
                 self.issue = (error as? TranscriptionError)?.localizedDescription ?? "Transcription failed — retry from the menu"
                 self.retryAudio = audio
-                self.retryExpiry = ProcessInfo.processInfo.systemUptime + 300
-                self.expireRecovery(after: 300, id: id)
+                self.retryExpiry = ProcessInfo.processInfo.systemUptime + self.recoveryLifetime
+                self.scheduleRecoveryExpiry()
                 self.logger.error("Transcription failed; recording retained in memory for retry")
                 self.fade()
             }
@@ -231,7 +250,7 @@ final class PrototypeController {
     }
 
     func retryTranscription() {
-        guard canRetry, ProcessInfo.processInfo.systemUptime < retryExpiry else { clearRecovery(); return }
+        guard canRetry, ProcessInfo.processInfo.systemUptime < retryExpiry else { clearRetry(); return }
         issue = nil
         discarded = false
         releasedAt = ProcessInfo.processInfo.systemUptime
@@ -239,19 +258,32 @@ final class PrototypeController {
         releaseLevel = 0
         phase = .processing
         overlay.reshow()
-        complete(audio: retryAudio, retry: true)
+        let audio = retryAudio
+        clearRetry()
+        complete(audio: audio, retry: true)
     }
 
     func copyTranscript() {
-        guard let pendingTranscript else { return }
-        inserter.copy(pendingTranscript)
-        clearRecovery()
-        issue = nil
+        guard let recovery = recoveries.first else { return }
+        guard inserter.copy(recovery.text) else { return }
+        recoveries.removeFirst()
+        // Copying an older result must not clear a newer recording's error.
+        scheduleRecoveryExpiry()
+    }
+
+    private func retainTranscript(_ text: String) {
+        recoveries.append(Recovery(text: text,
+            expiresAt: ProcessInfo.processInfo.systemUptime + recoveryLifetime))
+        // Preserve undelivered results across new holds without creating disk history.
+        // The existing Copy transcript action consumes the oldest waiting result.
+        if recoveries.count > 5 { recoveries.removeFirst(recoveries.count - 5) }
+        scheduleRecoveryExpiry()
     }
 
     private func fade() {
         fadeAt = ProcessInfo.processInfo.systemUptime
         phase = .fading
+        if discarded { destination?.stopMonitoring(); destination = nil }
         let id = cycleID
         completion = Task { [weak self] in
             guard let self else { return }
@@ -264,20 +296,37 @@ final class PrototypeController {
         }
     }
 
+    private func clearRetry() {
+        retryAudio = Data()
+        retryExpiry = 0
+        scheduleRecoveryExpiry()
+    }
+
     private func clearRecovery() {
         recoveryExpiryTask?.cancel()
         recoveryExpiryTask = nil
         retryAudio = Data()
         retryExpiry = 0
-        pendingTranscript = nil
+        recoveries.removeAll()
     }
 
-    private func expireRecovery(after seconds: Double, id: UUID) {
+    private func scheduleRecoveryExpiry() {
         recoveryExpiryTask?.cancel()
+        let deadlines = recoveries.map(\.expiresAt) + (retryExpiry > 0 ? [retryExpiry] : [])
+        guard let deadline = deadlines.min() else { recoveryExpiryTask = nil; return }
         recoveryExpiryTask = Task { [weak self] in
-            do { try await Task.sleep(for: .seconds(seconds)) } catch { return }
-            guard let self, self.cycleID == id else { return }
-            self.clearRecovery()
+            let delay = max(0, deadline - ProcessInfo.processInfo.systemUptime)
+            do { try await Task.sleep(for: .seconds(delay)) } catch { return }
+            guard let self else { return }
+            let now = ProcessInfo.processInfo.systemUptime
+            self.recoveries.removeAll { $0.expiresAt <= now }
+            if self.retryExpiry > 0, self.retryExpiry <= now {
+                self.retryAudio = Data()
+                self.retryExpiry = 0
+                self.destination?.stopMonitoring()
+                self.destination = nil
+            }
+            self.scheduleRecoveryExpiry()
         }
     }
 
@@ -307,11 +356,12 @@ final class PrototypeController {
     private func reset() {
         cycleID = UUID()
         completion?.cancel()
+        destination?.invalidate()
+        destination = nil
         holdID = nil
         meter.stop()
         clearRecovery()
         packets.removeAll()
-        inserter.clearDestination()
         keys.reset()
         phase = .idle
         overlay.hide()

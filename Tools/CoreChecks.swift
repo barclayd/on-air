@@ -27,6 +27,7 @@ struct CoreChecks {
         try check(MicrophoneMeter.level(pcm: pcm) > 0.9, "Signed little-endian PCM drives the meter")
         print("PASS: PCM energy and lossless PCM16 WAV framing")
 
+        try await FocusRecoveryChecks.run()
         try VersionFormattingChecks.run()
         try await SettingsChecks.run()
         try await OnboardingChecks.run()
