@@ -7,7 +7,8 @@ struct OnAirApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            OnAirMenu(controller: delegate.controller, openSetup: delegate.showSetup)
+            OnAirMenu(controller: delegate.controller, onboarding: delegate.onboarding.model,
+                      openSetup: delegate.showSetup)
         } label: {
             Image(systemName: delegate.controller.isListening ? "record.circle.fill" : delegate.controller.isTranscribing ? "ellipsis" : "waveform")
                 .symbolRenderingMode(.monochrome)
@@ -24,6 +25,7 @@ struct OnAirApp: App {
 
 private struct OnAirMenu: View {
     let controller: PrototypeController
+    let onboarding: OnboardingModel
     let openSetup: () -> Void
     @Environment(\.openSettings) private var openSettings
     var body: some View {
@@ -35,7 +37,9 @@ private struct OnAirMenu: View {
             Button("Retry transcription") { controller.retryTranscription() }
         }
         Divider()
-        Button("Set up On Air…", action: openSetup)
+        if !onboarding.completed {
+            Button("Set up On Air…", action: openSetup)
+        }
         Button("Settings…") {
             NSApp.activate(ignoringOtherApps: true)
             openSettings()

@@ -15,13 +15,12 @@ protocol DestinationAccess: AnyObject {
     func stopObserving()
 }
 
-enum DestinationCondition: String { case ready, interrupted, changed, unavailable }
+enum DestinationCondition: String { case ready, interrupted, unavailable }
 
 @MainActor
 final class DictationDestination {
     private let access: any DestinationAccess
     private(set) var condition: DestinationCondition = .unavailable
-    private var interacted = false
     private var changed = false
     private var invalidated = false
     private var interactionCount = 0
@@ -34,13 +33,12 @@ final class DictationDestination {
     }
 
     var processIdentifier: pid_t { access.processIdentifier }
-    var needsAttention: Bool { condition != .ready || interacted || changed }
+    var needsAttention: Bool { condition != .ready || changed }
     var canRestore: Bool { !invalidated && access.canRestore }
 
     private func startMonitoring() {
         access.observe(change: { [weak self] in self?.refresh() }, interaction: { [weak self] in
             guard let self else { return }
-            self.interacted = true
             self.interactionCount += 1
             self.refresh()
         })
@@ -48,9 +46,9 @@ final class DictationDestination {
 
     private func refresh() {
         condition = access.condition()
-        // A different field or changed content is not an external app stealing focus.
-        // Do not silently recover even if it changes back before transcription finishes.
-        if condition == .changed || condition == .unavailable { changed = true }
+        // Focus may move to any app or field while dictating. Only a change to
+        // the captured target itself disqualifies it, even if later undone.
+        if condition == .unavailable { changed = true }
     }
 
     func stopMonitoring() { access.stopObserving() }
@@ -63,7 +61,9 @@ final class DictationDestination {
         guard !changed else { return false }
         let generation = interactionCount
         if condition != .ready {
-            guard !interacted, canRestore, condition == .interrupted else { return false }
+            guard canRestore, condition == .interrupted else { return false }
+            // Earlier clicks do not change the destination captured at Fn-down.
+            // Fresh input during restoration still cancels this delivery attempt.
             // Request activation once. Poll for the exact field; never fight the user
             // with repeated activation requests or assume a delay proves success.
             guard access.requestFocus() else { return false }
@@ -155,8 +155,8 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
     func condition() -> DestinationCondition {
         guard targetUnchanged else { return .unavailable }
         guard application.isActive, NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier else { return .interrupted }
-        guard let current = Self.axElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) else { return .unavailable }
-        return CFEqual(current, element) ? .ready : .changed
+        guard let current = Self.axElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) else { return .interrupted }
+        return CFEqual(current, element) ? .ready : .interrupted
     }
 
     func requestFocus() -> Bool {

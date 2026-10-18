@@ -64,8 +64,10 @@ struct FocusRecoveryIntegration {
         let inserter = TranscriptInserter()
         guard let clipboard = ClipboardSnapshot.capture(.general) else { throw Failure(message: "Could not preserve clipboard for integration test") }
 
-        func focusEditor(text: String = "") async throws -> DictationDestination {
-            try await command(editor, ["action": "focus", "field": 0, "text": text])
+        func focusEditor(text: String = "", selection: [Int]? = nil) async throws -> DictationDestination {
+            var values: [String: Any] = ["action": "focus", "field": 0, "text": text]
+            if let selection { values["selection"] = selection }
+            try await command(editor, values)
             try await wait { NSWorkspace.shared.frontmostApplication?.processIdentifier == processes[0].processIdentifier }
             try await Task.sleep(for: .milliseconds(150))
             guard let destination = inserter.captureDestination() else {
@@ -88,6 +90,26 @@ struct FocusRecoveryIntegration {
             try await wait { NSWorkspace.shared.frontmostApplication?.processIdentifier == processes[1].processIdentifier }
             try await Task.sleep(for: .milliseconds(180))
         }
+        func clickField(_ directory: URL, field: String) async throws {
+            guard let point = state(directory)[field + "Click"] as? [Double], point.count == 2,
+                  let source = CGEventSource(stateID: .hidSystemState) else {
+                throw Failure(message: "Fixture click location unavailable")
+            }
+            // The coordinates come from the disposable fixture itself. Both
+            // windows are visible and separated so clicks cannot hit user apps.
+            let fixturePIDs = processes.map(\.processIdentifier)
+            try require(fixturePIDs.contains(NSWorkspace.shared.frontmostApplication?.processIdentifier ?? 0),
+                        "Fixture lost focus before simulated click")
+            for type in [CGEventType.leftMouseDown, .leftMouseUp] {
+                guard let event = CGEvent(mouseEventSource: source, mouseType: type,
+                                          mouseCursorPosition: CGPoint(x: point[0], y: point[1]), mouseButton: .left) else {
+                    throw Failure(message: "Could not create fixture click")
+                }
+                event.flags = []
+                event.post(tap: .cghidEventTap)
+            }
+            try await Task.sleep(for: .milliseconds(180))
+        }
 
         let normal = try await focusEditor(text: "Prefix: ")
         try require(await inserter.insert("normal insertion.", into: normal), "Normal paste was not posted: condition=\(normal.condition.rawValue), attention=\(normal.needsAttention), flags=\(CGEventSource.flagsState(.combinedSessionState).rawValue)")
@@ -106,13 +128,31 @@ struct FocusRecoveryIntegration {
         try require(state(editor)["second"] as? String == "", "Transcript landed in the wrong field")
         print("PASS: real cross-process focus theft restores the original field and inserts exactly once")
 
-        let changedField = try await focusEditor()
-        try await command(editor, ["action": "focus", "field": 1])
-        try await Task.sleep(for: .milliseconds(180))
-        try require(!(await inserter.insert("Must not paste.", into: changedField)), "Different field received an automatic paste")
+        let clickedApp = try await focusEditor()
+        try await clickField(distraction, field: "first")
+        try await wait { NSWorkspace.shared.frontmostApplication?.processIdentifier == processes[1].processIdentifier }
+        try require(await inserter.insert("Returned after a click.", into: clickedApp), "Clicking another app prevented recovery")
+        clickedApp.stopMonitoring()
+        try await wait { state(editor)["first"] as? String == "Returned after a click." }
+        try require(state(distraction)["first"] as? String == "", "Clicked app received the transcript")
+        print("PASS: a real click into another app restores and pastes into the original field")
+
+        let changedField = try await focusEditor(text: "Before SELECT after", selection: [7, 6])
+        try await clickField(editor, field: "second")
+        try require(changedField.condition == .interrupted, "Click did not move focus to the second field")
+        try require(await inserter.insert("dictation", into: changedField), "Same-app click prevented restoration")
         changedField.stopMonitoring()
-        try require(state(editor)["first"] as? String == "" && state(editor)["second"] as? String == "", "Field-change check mutated text")
-        print("PASS: changing fields in the same native app suppresses insertion")
+        try await wait { state(editor)["first"] as? String == "Before dictation after" }
+        try require(state(editor)["second"] as? String == "", "Clicked field received the transcript")
+        print("PASS: a real same-app click restores the original field and captured selection")
+
+        let returnedField = try await focusEditor()
+        try await clickField(editor, field: "second")
+        try await clickField(editor, field: "first")
+        try require(await inserter.insert("Returned manually.", into: returnedField), "Clicking away and back blocked insertion")
+        returnedField.stopMonitoring()
+        try await wait { state(editor)["first"] as? String == "Returned manually." }
+        print("PASS: clicking away and back preserves the captured destination")
 
         let edited = try await focusEditor()
         try await command(editor, ["action": "edit"])
@@ -137,9 +177,11 @@ struct FocusRecoveryIntegration {
         }
         try await wait { state(distraction)["first"] as? String == "x" }
         try await Task.sleep(for: .milliseconds(180))
-        try require(!(await inserter.insert("Must not paste.", into: userMoved)), "New keyboard activity should prevent automatic return")
+        try require(await inserter.insert("Original dictation target.", into: userMoved), "Earlier navigation changed the original destination")
         userMoved.stopMonitoring()
-        print("PASS: real keyboard activity in another app cancels automatic recovery")
+        try await wait { state(editor)["first"] as? String == "Original dictation target." }
+        try require(state(distraction)["first"] as? String == "x", "Navigation input was overwritten")
+        print("PASS: prior navigation keeps the original unchanged dictation target")
 
         let closed = try await focusEditor()
         try await command(editor, ["action": "close"])
@@ -149,7 +191,7 @@ struct FocusRecoveryIntegration {
         print("PASS: a closed native window cannot receive a late transcript")
         try require(ClipboardSnapshot.capture(.general)?.items == clipboard.items, "Clipboard contents/formats were not preserved")
         print("PASS: general clipboard contents and formats preserved across the integration run")
-        try Data("7 native integration checks passed\n".utf8).write(to: root.appendingPathComponent("result.txt"))
+        try Data("9 native integration checks passed\n".utf8).write(to: root.appendingPathComponent("result.txt"))
     }
 
     @MainActor private static func command(_ directory: URL, _ values: [String: Any]) async throws {
@@ -189,7 +231,9 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
     init(directory: URL) { self.directory = directory }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        window = NSWindow(contentRect: NSRect(x: 100, y: 100, width: 460, height: 250),
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1200, height: 800)
+        let offset: CGFloat = directory.lastPathComponent.hasPrefix("distraction-") ? 520 : 30
+        window = NSWindow(contentRect: NSRect(x: screen.minX + offset, y: screen.minY + 100, width: 460, height: 250),
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "On Air — disposable focus test"
         window.isReleasedWhenClosed = false
@@ -225,15 +269,24 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
                 window.makeKeyAndOrderFront(nil)
                 NSApp.activate(ignoringOtherApps: true)
                 window.makeFirstResponder(field)
-                field.setSelectedRange(NSRange(location: field.string.utf16.count, length: 0))
+                if let selection = value["selection"] as? [Int], selection.count == 2 {
+                    field.setSelectedRange(NSRange(location: selection[0], length: selection[1]))
+                } else {
+                    field.setSelectedRange(NSRange(location: field.string.utf16.count, length: 0))
+                }
             case "edit": first.string = "Edited by fixture"; first.setSelectedRange(NSRange(location: 0, length: 0))
             case "close": window.close()
             default: break
             }
             commandID = value["id"] as? String ?? ""
         }
+        func clickPoint(_ view: NSView) -> [Double] {
+            let point = window.convertPoint(toScreen: view.convert(NSPoint(x: 10, y: 10), to: nil))
+            return [Double(point.x), Double(CGDisplayBounds(CGMainDisplayID()).height - point.y)]
+        }
         let state: [String: Any] = ["ready": true, "id": commandID, "first": first.string,
                                     "second": second.string, "visible": window.isVisible,
+                                    "firstClick": clickPoint(first), "secondClick": clickPoint(second),
                                     "responder": window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"]
         if let data = try? JSONSerialization.data(withJSONObject: state) {
             try? data.write(to: directory.appendingPathComponent("state.json"), options: .atomic)
