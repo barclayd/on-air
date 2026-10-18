@@ -116,7 +116,7 @@ Settings design checks also exercise the actual AppKit slider through pointer dr
 
 ## Focus recovery
 
-`Tools/FocusRecoveryChecks.swift` runs thirty-four checks of the production destination policy against controlled OS boundaries. It checks unchanged focus, external activation, delayed activation, bounded failure, prior clicks/navigation, changed/closed/uninspectable targets, edits during and after preparation (even if undone), and fresh input cancelling an in-flight restoration, final validation, cancellation, session invalidation and observer cleanup. It never posts events or moves desktop focus.
+`Tools/FocusRecoveryChecks.swift` runs forty-nine checks of the production destination policy against controlled OS boundaries. It checks unchanged focus, external activation, delayed activation, bounded failure, prior clicks/navigation, changed/closed/uninspectable targets, edits during and after preparation (even if undone), and fresh input cancelling an in-flight restoration, final validation, cancellation, session invalidation and observer cleanup. It also covers moving caret offsets without text snapshots, protection of replacement selections, temporary accessibility failures, bounded retries and recovery without repeated activation. It never posts events or moves desktop focus.
 
 Nineteen `FocusRecoveryE2ETests` run the real app/controller with that same production policy and a controlled destination adapter. They cover interruptions during recording and transcription, refused restoration, unchanged UI/status, clicking another app or field during recording/transcription, clicking away and back, fresh clicks during restoration, edited/closed destinations, preservation across a successful subsequent dictation, ordered recovery, failed Copy, copying an older result during a new microphone failure, independent expiry during a new hold, session lock during restoration, retries crossing the old expiry deadline and the five-result memory bound. Copy fallback tests use a changed original destination, while focus-only changes must return to the captured field.
 
@@ -126,11 +126,29 @@ For actual macOS Accessibility and event delivery, run separately from the E2E s
 Tools/test-focus-integration.sh
 ```
 
-This opt-in check compiles the production destination adapter and transcript inserter alongside a disposable native editor fixture. It launches two fixture processes, briefly switches focus between their windows, and tests real AX capture, restoration and paste. It also sends real clicks into another app and another field, verifies replacement of the captured selection, exercises clicking away and back, modified content, keyboard activity in the other app, closed windows and clipboard preservation. It restores the previous foreground app and closes the fixture processes on exit. Existing Accessibility/event-posting access is required; it does not open permission prompts. Do not run it concurrently with another desktop test or interact with the clipboard/windows during the check. It opens no microphone and makes no API calls. Evidence goes to `.build/focus-integration/`.
+This opt-in check compiles the production destination adapter and transcript inserter alongside a disposable native editor fixture. It launches two fixture processes, briefly switches focus between their windows, and tests real AX capture, restoration and paste. It also sends real clicks into another app and another field, verifies replacement of the captured selection, exercises clicking away and back, actual keyboard edits, keyboard activity in the other app, closed windows and clipboard preservation. Continuous background output changes both the field value and its caret offset while dictation is pending and during paste; this must work with unchanged focus and after restoring focus. Changing the selected words while keeping the same selection range must still prevent replacement. It restores the previous foreground app and closes the fixture processes on exit. Existing Accessibility/event-posting access is required; it does not open permission prompts. Do not run it concurrently with another desktop test or interact with the clipboard/windows during the check. It opens no microphone and makes no API calls. Evidence goes to `.build/focus-integration/`.
 
 Native fixture coverage does not establish compatibility with every third-party editor. Before release, also check physical Fn dictation in Codex, Chrome and Slack, including full-screen Spaces, app focus theft, intentional navigation and a destination that closes mid-transcription. The normal glow, status text and menu must remain unchanged.
 
 On 18 October 2026, the updated native integration check passed all nine checks on this Mac, including actual clicks into another app and another field, restoration of the original selection, paste delivery, navigation before restoration and clipboard preservation. This is fixture-window coverage, not a claim that physical Fn, microphone capture or every third-party editor was retested.
+
+Later that day, all twelve expanded native checks passed with the resilient destination implementation. Running the same expanded suite against the previous destination implementation failed at `Background text updates prevented insertion`, establishing that the new continuous-output case reproduces the regression. This correction is application-independent: it preserves the original AX field/window and permits background content/caret updates, while observed keyboard input in that field, changed replacement selections, closed targets and unverified focus still prevent delivery. No app-name exception or UI change is involved.
+
+## Local dictation diagnostics
+
+For an instrumented build, enable content-free destination diagnostics with
+`defaults write com.danbarclay.onair dictationDiagnosticsEnabled -bool true`.
+Capture the running app with
+`log stream --level info --style compact --predicate 'process == "On Air" AND subsystem == "com.danbarclay.onair"'`.
+These opt-in events identify the captured app/process, a random destination ID,
+selection snapshot availability, state changes, the first disqualifying check, accessibility
+attribute/error codes and restoration results. They never include dictated text,
+field/clipboard contents, selections, content digests, window titles or API keys.
+Only state changes are logged while polling. Logging itself does not alter capture,
+restoration or paste decisions. Disable with
+`defaults delete com.danbarclay.onair dictationDiagnosticsEnabled` and stop the
+log capture when the investigation finishes. Keep captures local unless the user
+explicitly asks to share them.
 
 ## Updates
 

@@ -226,7 +226,10 @@ final class PrototypeController {
                     let inserted: Bool
                     if let destination = self.destination {
                         inserted = await self.inserter.insert(text, into: destination)
-                    } else { inserted = false }
+                    } else {
+                        self.logger.info("Automatic paste skipped: no destination captured at Fn-down")
+                        inserted = false
+                    }
                     guard !Task.isCancelled, self.cycleID == id else { return }
                     if !inserted {
                         self.retainTranscript(text)

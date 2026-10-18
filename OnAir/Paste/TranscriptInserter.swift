@@ -43,7 +43,7 @@ final class TranscriptInserter: TranscriptInserting {
         guard let source = CGEventSource(stateID: .hidSystemState),
               let down = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: true),
               let up = CGEvent(keyboardEventSource: source, virtualKey: 9, keyDown: false) else { return skip("paste event creation failed") }
-        guard destination.isReadyForInsertion() else { return false }
+        guard destination.isReadyForInsertion() else { return skip("destination changed before preparing clipboard") }
         guard pasteboard.changeCount == saved.changeCount else { return skip("clipboard changed before paste") }
         pasteboard.clearContents()
         guard pasteboard.setString(transcript, forType: .string) else {

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 
 @MainActor
 enum FocusRecoveryChecks {
@@ -13,6 +14,62 @@ enum FocusRecoveryChecks {
             access.current = condition
             return (access, DictationDestination(access: access))
         }
+
+        func digest(_ text: String) -> SHA256.Digest { SHA256.hash(data: Data(text.utf8)) }
+        var selectedTextReads = 0
+        let caret = DestinationSelectionSnapshot(range: CFRange(location: 10, length: 0)) {
+            selectedTextReads += 1; return digest("unused")
+        }
+        try expect(caret.rejection(currentRange: { CFRange(location: 400, length: 0) }, selectedText: {
+            selectedTextReads += 1; return digest("background output")
+        }) == nil, "Background output or a document update may advance the caret in the original field")
+        try expect(selectedTextReads == 0, "Caret-only dictation never reads or fingerprints mutable text")
+        try expect(caret.rejection(currentRange: { CFRange(location: 10, length: 5) }, selectedText: { digest("other") }) == "selection_changed",
+                   "A new selection cannot turn a caret insertion into replacement")
+        try expect(caret.rejection(currentRange: { nil }, selectedText: { nil }) == "selection_unreadable",
+                   "An unreadable previously captured selection is not considered verified")
+        let replacement = DestinationSelectionSnapshot(range: CFRange(location: 10, length: 5), selectedText: { digest("words") })
+        try expect(replacement.rejection(currentRange: { CFRange(location: 10, length: 5) }, selectedText: { digest("words") }) == nil,
+                   "An unchanged original selection can still be replaced")
+        try expect(replacement.rejection(currentRange: { CFRange(location: 10, length: 5) }, selectedText: { digest("other") }) == "selected_text_changed",
+                   "Background changes to the selected words cannot be overwritten")
+        try expect(replacement.rejection(currentRange: { CFRange(location: 11, length: 5) }, selectedText: { digest("words") }) == "selection_changed",
+                   "A moved replacement selection remains disqualifying")
+        try expect(replacement.rejection(currentRange: { CFRange(location: 10, length: 5) }, selectedText: { nil }) == "selected_text_unreadable",
+                   "Replacement requires readable selected words")
+
+        let (busy, temporarilyUnreadable) = fixture(.unverified)
+        Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(85))
+            busy.move(.ready)
+        }
+        try expect(await temporarilyUnreadable.prepare(), "Temporary accessibility failures recover within the verification budget")
+        try expect(busy.requests == 0, "Retrying an unreadable target does not request app activation")
+        temporarilyUnreadable.invalidate()
+
+        let (unresponsive, stillUnreadable) = fixture(.unverified)
+        try expect(!(await stillUnreadable.prepare()), "A target that stays unreadable never receives a paste")
+        unresponsive.move(.ready)
+        try expect(await stillUnreadable.prepare(), "An inconclusive read does not permanently poison the captured destination")
+        stillUnreadable.invalidate()
+
+        let (gone, unreadableThenClosed) = fixture(.unverified)
+        gone.move(.unavailable)
+        gone.move(.ready)
+        try expect(!(await unreadableThenClosed.prepare()), "A confirmed invalid target remains disqualified after temporary read failures")
+        unreadableThenClosed.invalidate()
+
+        let (busyRestore, restoreThroughBusy) = fixture(.interrupted)
+        busyRestore.onRequest = {
+            busyRestore.move(.unverified)
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(85))
+                busyRestore.move(.ready)
+            }
+        }
+        try expect(await restoreThroughBusy.prepare(), "Transient reads during focus restoration can recover")
+        try expect(busyRestore.requests == 1, "Transient reads do not repeatedly activate the captured app")
+        restoreThroughBusy.invalidate()
 
         let (normal, ready) = fixture()
         try expect(await ready.prepare(), "Unchanged destination is ready")
