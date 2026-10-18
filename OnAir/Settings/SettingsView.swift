@@ -35,7 +35,7 @@ struct SettingsView: View {
             Rectangle().fill(.white.opacity(0.06)).frame(height: 1).padding(.horizontal, 32)
             updatesSection.padding(.horizontal, 32).padding(.vertical, 20)
         }
-        .frame(width: 520).frame(minHeight: 560, idealHeight: 720, maxHeight: 720)
+        .frame(width: 520, height: min(780, (NSScreen.main?.visibleFrame.height ?? 880) - 100))
         .foregroundStyle(SettingsPalette.text)
         .background(SettingsPalette.background.ignoresSafeArea())
         .background(SettingsWindowChrome(onClose: { model.dismiss(owner: "settings") }))
@@ -71,7 +71,7 @@ struct SettingsView: View {
             }
             HStack {
                 Toggle("Automatically check for updates", isOn: Binding(
-                    get: { updates.automaticallyChecks }, set: updates.setAutomaticallyChecks))
+                    get: { updates.automaticallyChecks }, set: { updates.setAutomaticallyChecks($0) }))
                     .toggleStyle(.checkbox).font(.system(size: 12))
                     .accessibilityIdentifier("settings.automatic-updates")
                 Spacer(minLength: 8)
