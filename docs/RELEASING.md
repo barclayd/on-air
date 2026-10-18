@@ -69,6 +69,13 @@ The pipeline validates a real unsigned archive and DMG without credentials in no
 
 ## Publish a version
 
+Choose a new version for each completed application change: patch for fixes,
+minor for compatible features, and major for breaking changes. Keep both Xcode
+configurations' `MARKETING_VERSION` aligned with that version. Each application
+PR should include a signed, notarized preview built from its current commit using
+the chosen tag with `publish=false`, plus validation evidence and a build link.
+The preview does not create the tag or advance the public update feed.
+
 Tags must be `vMAJOR.MINOR.PATCH`, or add `-alpha.N`, `-beta.N`, or `-rc.N` (N starts at 1). The tag must point to a commit on main. Tag a commit whose manual checks have passed:
 
 ```sh
