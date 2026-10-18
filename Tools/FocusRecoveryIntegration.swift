@@ -110,12 +110,44 @@ struct FocusRecoveryIntegration {
             }
             try await Task.sleep(for: .milliseconds(180))
         }
+        func typeX(into process: Process) throws {
+            try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == process.processIdentifier,
+                        "Fixture lost focus before simulated keyboard input")
+            guard let source = CGEventSource(stateID: .hidSystemState) else { throw Failure(message: "Could not create test event source") }
+            for down in [true, false] {
+                let event = CGEvent(keyboardEventSource: source, virtualKey: 7, keyDown: down)
+                event?.flags = []
+                event?.post(tap: .cghidEventTap)
+            }
+        }
 
         let normal = try await focusEditor(text: "Prefix: ")
         try require(await inserter.insert("normal insertion.", into: normal), "Normal paste was not posted: condition=\(normal.condition.rawValue), attention=\(normal.needsAttention), flags=\(CGEventSource.flagsState(.combinedSessionState).rawValue)")
         normal.stopMonitoring()
         try await wait { state(editor)["first"] as? String == "Prefix: normal insertion." }
         print("PASS: production paste reaches native NSTextView at the captured selection")
+
+        let updating = try await focusEditor(text: "Prompt: ")
+        try await command(editor, ["action": "startOutput"])
+        try await wait { (state(editor)["outputTicks"] as? Int ?? 0) >= 4 }
+        try require(await inserter.insert("Dictation during output.", into: updating), "Background text updates prevented insertion")
+        updating.stopMonitoring()
+        try await command(editor, ["action": "stopOutput"])
+        let updatingText = state(editor)["first"] as? String ?? ""
+        try require(updatingText.hasSuffix("Prompt: Dictation during output."), "Output displaced the intended input/caret")
+        try require(updatingText.components(separatedBy: "Dictation during output.").count == 2, "Dictation was inserted more than once")
+        print("PASS: continuously changing text and caret offsets preserve insertion into the original field")
+
+        let updatingAway = try await focusEditor(text: "Prompt: ")
+        try await stealFocus()
+        try await command(editor, ["action": "startOutput"])
+        try await wait { (state(editor)["outputTicks"] as? Int ?? 0) >= 4 }
+        try require(await inserter.insert("Restored during output.", into: updatingAway), "Background output prevented restoring the original field")
+        updatingAway.stopMonitoring()
+        try await command(editor, ["action": "stopOutput"])
+        try require((state(editor)["first"] as? String ?? "").hasSuffix("Prompt: Restored during output."), "Recovery did not use the original field's current caret")
+        try require(state(distraction)["first"] as? String == "", "Dynamic-content recovery pasted into the other app")
+        print("PASS: focus recovery returns to the original field while its background output keeps updating")
 
         let interrupted = try await focusEditor()
         try await stealFocus()
@@ -154,27 +186,28 @@ struct FocusRecoveryIntegration {
         try await wait { state(editor)["first"] as? String == "Returned manually." }
         print("PASS: clicking away and back preserves the captured destination")
 
-        let edited = try await focusEditor()
-        try await command(editor, ["action": "edit"])
+        let edited = try await focusEditor(text: "Typed: ")
+        try typeX(into: processes[0])
+        try await wait { state(editor)["first"] as? String == "Typed: x" }
         try await Task.sleep(for: .milliseconds(180))
         try await stealFocus()
         try require(!(await inserter.insert("Must not paste.", into: edited)), "Changed content was overwritten")
         edited.stopMonitoring()
-        try require(state(editor)["first"] as? String == "Edited by fixture", "Existing edited content changed")
-        print("PASS: changed destination content prevents restoration and paste")
+        try require(state(editor)["first"] as? String == "Typed: x", "Existing edited content changed")
+        print("PASS: actual keyboard input in the original field still prevents a late paste")
+
+        let changedSelection = try await focusEditor(text: "Before words after", selection: [7, 5])
+        try await command(editor, ["action": "replaceSelectedText"])
+        try await Task.sleep(for: .milliseconds(180))
+        try require(!(await inserter.insert("Must not replace.", into: changedSelection)), "Changed selected words were overwritten")
+        changedSelection.stopMonitoring()
+        try require(state(editor)["first"] as? String == "Before OTHER after", "A changed replacement selection was destroyed")
+        print("PASS: changed selected text is protected even when its selection range stays the same")
 
         let userMoved = try await focusEditor()
         try await stealFocus()
-        let source = CGEventSource(stateID: .hidSystemState)
-        for down in [true, false] {
-            let event = CGEvent(keyboardEventSource: source, virtualKey: 7, keyDown: down)
-            event?.flags = []
-            try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == processes[1].processIdentifier,
-                        "Fixture lost focus before simulated user input")
-            // Process-directed events bypass NSEvent's global monitor. Use the
-            // session input path here to exercise actual user-navigation observation.
-            event?.post(tap: .cghidEventTap)
-        }
+        // Use session input so the production global monitor observes it.
+        try typeX(into: processes[1])
         try await wait { state(distraction)["first"] as? String == "x" }
         try await Task.sleep(for: .milliseconds(180))
         try require(await inserter.insert("Original dictation target.", into: userMoved), "Earlier navigation changed the original destination")
@@ -191,7 +224,7 @@ struct FocusRecoveryIntegration {
         print("PASS: a closed native window cannot receive a late transcript")
         try require(ClipboardSnapshot.capture(.general)?.items == clipboard.items, "Clipboard contents/formats were not preserved")
         print("PASS: general clipboard contents and formats preserved across the integration run")
-        try Data("9 native integration checks passed\n".utf8).write(to: root.appendingPathComponent("result.txt"))
+        try Data("12 native integration checks passed\n".utf8).write(to: root.appendingPathComponent("result.txt"))
     }
 
     @MainActor private static func command(_ directory: URL, _ values: [String: Any]) async throws {
@@ -228,6 +261,8 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
     private let second = NSTextView(frame: NSRect(x: 20, y: 45, width: 420, height: 65))
     private var timer: Timer?
     private var commandID = ""
+    private var outputRunning = false
+    private var outputTicks = 0
     init(directory: URL) { self.directory = directory }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -264,6 +299,7 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
             try? FileManager.default.removeItem(at: request)
             switch value["action"] as? String {
             case "focus":
+                outputRunning = false
                 let field = value["field"] as? Int == 1 ? second : first
                 if let text = value["text"] as? String { first.string = text; second.string = "" }
                 window.makeKeyAndOrderFront(nil)
@@ -274,18 +310,30 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
                 } else {
                     field.setSelectedRange(NSRange(location: field.string.utf16.count, length: 0))
                 }
-            case "edit": first.string = "Edited by fixture"; first.setSelectedRange(NSRange(location: 0, length: 0))
+            case "startOutput": outputRunning = true; outputTicks = 0
+            case "stopOutput": outputRunning = false
+            case "replaceSelectedText":
+                let selection = first.selectedRange()
+                first.textStorage?.replaceCharacters(in: selection, with: "OTHER")
+                first.setSelectedRange(selection)
             case "close": window.close()
             default: break
             }
             commandID = value["id"] as? String ?? ""
+        }
+        if outputRunning {
+            outputTicks += 1
+            let prefix = "Background output \(outputTicks)\n"
+            let selection = first.selectedRange()
+            first.textStorage?.replaceCharacters(in: NSRange(location: 0, length: 0), with: prefix)
+            first.setSelectedRange(NSRange(location: selection.location + prefix.utf16.count, length: selection.length))
         }
         func clickPoint(_ view: NSView) -> [Double] {
             let point = window.convertPoint(toScreen: view.convert(NSPoint(x: 10, y: 10), to: nil))
             return [Double(point.x), Double(CGDisplayBounds(CGMainDisplayID()).height - point.y)]
         }
         let state: [String: Any] = ["ready": true, "id": commandID, "first": first.string,
-                                    "second": second.string, "visible": window.isVisible,
+                                    "second": second.string, "visible": window.isVisible, "outputTicks": outputTicks,
                                     "firstClick": clickPoint(first), "secondClick": clickPoint(second),
                                     "responder": window.firstResponder.map { String(describing: type(of: $0)) } ?? "nil"]
         if let data = try? JSONSerialization.data(withJSONObject: state) {

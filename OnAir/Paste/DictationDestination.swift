@@ -33,7 +33,29 @@ extension DestinationAccess {
     var diagnosticDescription: String { "fixture pid=\(processIdentifier)" }
 }
 
-enum DestinationCondition: String { case ready, interrupted, unavailable }
+enum DestinationCondition: String { case ready, interrupted, unverified, unavailable }
+
+/// A caret can move when an app updates its document or terminal output. That
+/// does not change the intended field. A replacement selection is different:
+/// verify both its range and selected text so we never replace different words.
+struct DestinationSelectionSnapshot {
+    let range: CFRange?
+    private let selectedText: SHA256.Digest?
+
+    init(range: CFRange?, selectedText: () -> SHA256.Digest?) {
+        self.range = range
+        self.selectedText = (range?.length ?? 0) > 0 ? selectedText() : nil
+    }
+
+    func rejection(currentRange: () -> CFRange?, selectedText: () -> SHA256.Digest?) -> String? {
+        guard let range else { return nil }
+        guard let current = currentRange() else { return "selection_unreadable" }
+        guard range.length > 0 || current.length > 0 else { return nil }
+        guard range.location == current.location, range.length == current.length else { return "selection_changed" }
+        guard let original = self.selectedText, let currentText = selectedText() else { return "selected_text_unreadable" }
+        return original == currentText ? nil : "selected_text_changed"
+    }
+}
 
 @MainActor
 final class DictationDestination {
@@ -65,8 +87,8 @@ final class DictationDestination {
 
     private func refresh() {
         condition = access.condition()
-        // Focus may move to any app or field while dictating. Only a change to
-        // the captured target itself disqualifies it, even if later undone.
+        // A confirmed invalid target stays disqualified, even if later restored.
+        // A temporary AX messaging failure is unverified and can be retried.
         if condition == .unavailable {
             if !changed {
                 firstUnavailable = access.diagnosticDescription
@@ -86,18 +108,23 @@ final class DictationDestination {
         guard !changed else { return fail("previously_unavailable") }
         let generation = interactionCount
         if condition != .ready {
-            guard canRestore, condition == .interrupted else { return fail("restoration_not_supported") }
-            // Earlier clicks do not change the destination captured at Fn-down.
-            // Fresh input during restoration still cancels this delivery attempt.
-            // Request activation once. Poll for the exact field; never fight the user
-            // with repeated activation requests or assume a delay proves success.
-            guard access.requestFocus() else { return fail("activation_rejected") }
+            var requestedFocus = false
+            // Retry temporary AX failures as well as asynchronous focus recovery.
+            // Earlier navigation does not retarget dictation; fresh input during
+            // this bounded verification still cancels delivery.
             for _ in 0..<10 {
                 guard !invalidated, !changed, !Task.isCancelled, interactionCount == generation else { return fail("interrupted_during_restoration") }
-                access.focusOriginalField()
+                if condition == .interrupted {
+                    guard canRestore else { return fail("restoration_not_supported") }
+                    if !requestedFocus {
+                        guard access.requestFocus() else { return fail("activation_rejected") }
+                        requestedFocus = true
+                    }
+                    access.focusOriginalField()
+                }
                 refresh()
                 if condition == .ready { break }
-                guard condition != .unavailable, access.canRestore else { return fail("target_unavailable_during_restoration") }
+                guard condition != .unavailable else { return fail("target_unavailable_during_restoration") }
                 do { try await Task.sleep(for: .milliseconds(40)) } catch { return fail("restoration_cancelled") }
             }
         }
@@ -127,8 +154,9 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
     private let application: NSRunningApplication
     private let element: AXUIElement
     private let window: AXUIElement?
-    private let selection: CFRange?
-    private let contentDigest: SHA256.Digest?
+    private let role: String
+    private let selection: DestinationSelectionSnapshot
+    private var inputInOriginalField = false
     private var observer: AXObserver?
     private var poll: Timer?
     private var globalInput: Any?
@@ -141,7 +169,7 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
     private var reportedState: String?
 
     var diagnosticDescription: String {
-        "id=\(diagnosticID) app=\(application.bundleIdentifier ?? "unknown") pid=\(processIdentifier) reason=\(issue) ax=\(reader.lastFailure ?? "none") window=\(window != nil) selection=\(selection != nil) content=\(contentDigest != nil)"
+        "id=\(diagnosticID) app=\(application.bundleIdentifier ?? "unknown") pid=\(processIdentifier) reason=\(issue) ax=\(reader.lastFailure ?? "none") window=\(window != nil) selection=\(selection.range != nil) replacement=\((selection.range?.length ?? 0) > 0) targetInput=\(inputInOriginalField)"
     }
 
     static func capture() -> SystemDestinationAccess? {
@@ -154,39 +182,40 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
         guard let app = NSWorkspace.shared.frontmostApplication else { return rejected("no_frontmost_application") }
         guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return rejected("on_air_is_frontmost") }
         guard let field = reader.axElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) else { return rejected("focused_element_unreadable") }
-        guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(reader.string(field, kAXRoleAttribute)) else { return rejected("unsupported_field_role") }
+        let role = reader.string(field, kAXRoleAttribute)
+        guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) else { return rejected("unsupported_field_role") }
         guard reader.string(field, kAXSubroleAttribute) != kAXSecureTextFieldSubrole as String else { return rejected("secure_field") }
         var pid: pid_t = 0
         guard AXUIElementGetPid(field, &pid) == .success, pid == app.processIdentifier else { return rejected("focused_element_process_mismatch") }
         AXUIElementSetMessagingTimeout(field, 0.1)
-        return SystemDestinationAccess(application: app, element: field, reader: reader)
+        return SystemDestinationAccess(application: app, element: field, role: role, reader: reader)
     }
 
-    private init(application: NSRunningApplication, element: AXUIElement, reader: DestinationAXReader) {
+    private init(application: NSRunningApplication, element: AXUIElement, role: String, reader: DestinationAXReader) {
         self.application = application
         self.reader = reader
         processIdentifier = application.processIdentifier
         self.element = element
+        self.role = role
         window = reader.axElement(element, kAXWindowAttribute)
-        selection = reader.range(element)
-        contentDigest = reader.digest(element)
+        selection = DestinationSelectionSnapshot(range: reader.range(element), selectedText: { reader.selectedTextDigest(element) })
         super.init()
         DictationDiagnostics.record("Destination captured: \(diagnosticDescription)")
     }
 
-    private var targetUnchanged: Bool {
+    private var targetIsUsable: Bool {
         reader.lastFailure = nil
+        reader.lastError = nil
         guard AXIsProcessTrusted() else { return reject("accessibility_not_trusted") }
         guard !application.isTerminated else { return reject("application_terminated") }
-        guard !reader.string(element, kAXRoleAttribute).isEmpty else { return reject("target_role_unreadable") }
+        guard !inputInOriginalField else { return reject("input_in_original_field") }
+        let currentRole = reader.string(element, kAXRoleAttribute)
+        guard !currentRole.isEmpty else { return reject("target_role_unreadable") }
+        guard currentRole == role else { return reject("target_role_changed") }
         guard reader.string(element, kAXSubroleAttribute) != kAXSecureTextFieldSubrole as String else { return reject("target_became_secure") }
-        if let selection {
-            guard let current = reader.range(element) else { return reject("selection_unreadable") }
-            guard selection.location == current.location, selection.length == current.length else { return reject("selection_changed") }
-        }
-        if let contentDigest {
-            guard let current = reader.digest(element) else { return reject("content_unreadable_or_oversized") }
-            guard current == contentDigest else { return reject("content_changed") }
+        guard reader.lastError != .cannotComplete else { return reject("target_subrole_unreadable") }
+        if let reason = selection.rejection(currentRange: { reader.range(element) }, selectedText: { reader.selectedTextDigest(element) }) {
+            return reject(reason)
         }
         if let window {
             guard reader.axElement(element, kAXWindowAttribute).map({ CFEqual($0, window) }) == true else { return reject("target_window_changed_or_unreadable") }
@@ -197,21 +226,22 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
             if let focusedWindow = reader.axElement(app, kAXFocusedWindowAttribute),
                !CFEqual(window, focusedWindow), reader.attribute(focusedWindow, kAXModalAttribute) as? Bool == true { return reject("different_modal_window") }
         }
-        issue = "target_unchanged"
+        issue = "target_valid"
         return true
     }
 
     private func reject(_ reason: String) -> Bool { issue = reason; return false }
 
     var canRestore: Bool {
-        // Restoring focus requires a verifiable selection/content snapshot. Custom
-        // editors without one can still use normal paste while focus is unchanged.
-        window != nil && selection != nil && contentDigest != nil && targetUnchanged
+        // Structural capability only. condition() verifies the live target before
+        // each attempt and after focus changes. Re-reading here could turn a
+        // transient AX failure into an irreversible "cannot restore" decision.
+        window != nil && selection.range != nil
     }
 
     func condition() -> DestinationCondition {
         let result: DestinationCondition
-        if !targetUnchanged { result = .unavailable }
+        if !targetIsUsable { result = reader.lastError == .cannotComplete ? .unverified : .unavailable }
         else if !application.isActive || NSWorkspace.shared.frontmostApplication?.processIdentifier != processIdentifier {
             issue = "application_not_frontmost"; result = .interrupted
         } else if let current = reader.axElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) {
@@ -275,13 +305,26 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
         poll = timer
         RunLoop.main.add(timer, forMode: .common)
         let mask: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown, .keyDown]
-        globalInput = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] _ in
-            MainActor.assumeIsolated { self?.interaction?() }
+        globalInput = NSEvent.addGlobalMonitorForEvents(matching: mask) { [weak self] event in
+            MainActor.assumeIsolated { self?.observedInput(event) }
         }
         localInput = NSEvent.addLocalMonitorForEvents(matching: mask) { [weak self] event in
-            MainActor.assumeIsolated { self?.interaction?() }
+            MainActor.assumeIsolated { self?.observedInput(event) }
             return event
         }
+    }
+
+    private func observedInput(_ event: NSEvent) {
+        // Keyboard input into the original field changes the user's editing
+        // context. Background app updates and navigation elsewhere do not.
+        if event.type == .keyDown, application.isActive,
+           NSWorkspace.shared.frontmostApplication?.processIdentifier == processIdentifier {
+            let focused = reader.axElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute)
+            if focused.map({ CFEqual($0, element) }) != false {
+                inputInOriginalField = true
+            }
+        }
+        interaction?()
     }
 
     func stopObserving() {
@@ -302,12 +345,15 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
 @MainActor
 private final class DestinationAXReader {
     var lastFailure: String?
+    var lastError: AXError?
     func attribute(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
         lastFailure = nil
+        lastError = nil
         var value: CFTypeRef?
         let result = AXUIElementCopyAttributeValue(element, name as CFString, &value)
         guard result == .success else {
             lastFailure = "\(name):\(result.rawValue)"
+            lastError = result
             return nil
         }
         return value
@@ -324,9 +370,10 @@ private final class DestinationAXReader {
         var range = CFRange()
         return AXValueGetValue(axValue, .cfRange, &range) ? range : nil
     }
-    func digest(_ element: AXUIElement) -> SHA256.Digest? {
-        guard let value = attribute(element, kAXValueAttribute) as? String, value.utf8.count <= 1_048_576 else { return nil }
-        // Keep only a digest, never field contents, and never log either.
+    func selectedTextDigest(_ element: AXUIElement) -> SHA256.Digest? {
+        guard let value = attribute(element, kAXSelectedTextAttribute) as? String, value.utf8.count <= 1_048_576 else { return nil }
+        // Only replacement selections need a text snapshot. Never read/hash the
+        // whole field: terminal output and dynamic documents legitimately change.
         return SHA256.hash(data: Data(value.utf8))
     }
 }
