@@ -11,5 +11,6 @@ xcrun swiftc -swift-version 6 -parse-as-library \
     OnAir/Settings/DictationPreferences.swift OnAir/Settings/SettingsModel.swift \
     OnAir/Overlay/GlowFrame.swift OnAir/Settings/GlowPreferences.swift \
     OnAir/Onboarding/OnboardingModel.swift Tools/OnboardingChecks.swift \
+    OnAir/Updates/UpdateModel.swift Tools/UpdateChecks.swift \
     Tools/SettingsChecks.swift Tools/VersionFormattingChecks.swift Tools/FocusRecoveryChecks.swift Tools/CoreChecks.swift -o .build/core-tests/checks
 .build/core-tests/checks

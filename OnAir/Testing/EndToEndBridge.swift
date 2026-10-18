@@ -18,10 +18,21 @@ final class EndToEndBridge {
     private let settingsCredentials = FixtureCredentials()
     private let settingsVerifier = FixtureKeyVerifier()
     private var settingsModel: SettingsModel?
+    private let updateDriver = FixtureUpdateDriver()
+    private var updateModel: UpdateModel?
     private var onboarding: OnboardingWindowController?
     private lazy var setupSystem = FixtureSetupSystem(input: input)
     private lazy var glow = GlowPreferences(defaults: UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!)
     var shouldShowOnboarding: Bool { ProcessInfo.processInfo.environment["ON_AIR_E2E_ONBOARDING"] == "1" }
+
+    func makeUpdates(controller: PrototypeController) -> UpdateModel {
+        let model = UpdateModel(driver: updateDriver, dictationIsBusy: { [weak controller] in
+            guard let controller else { return false }
+            return controller.isVisible || controller.canRetry || controller.pendingTranscriptCount > 0
+        })
+        updateModel = model
+        return model
+    }
 
     func makeOnboarding(settings: SettingsModel, controller: PrototypeController) -> OnboardingWindowController {
         let defaults = UserDefaults(suiteName: "com.danbarclay.onair.e2e.settings.\(directory.lastPathComponent)")!
@@ -114,6 +125,26 @@ final class EndToEndBridge {
 
     private func handle(_ command: [String: Any], controller: PrototypeController) throws {
         switch command["action"] as? String {
+        case "checkUpdates": updateModel?.check()
+        case "checkUpdatesMenu":
+            guard let (menu, _) = updateCommand(in: NSApp.mainMenu) else { throw BridgeError.invalidCommand }
+            // SwiftUI rebuilds and validates commands when their menu opens.
+            // update() alone does not run that delegate callback, and can leave
+            // a stale disabled item behind. Re-find the item after rebuilding.
+            menu.delegate?.menuNeedsUpdate?(menu)
+            menu.update()
+            guard let (_, index) = updateCommand(in: menu), menu.items[index].isEnabled else {
+                throw BridgeError.invalidCommand
+            }
+            menu.performActionForItem(at: index)
+        case "automaticUpdates": updateModel?.setAutomaticallyChecks(command["enabled"] as? Bool ?? false)
+        case "updateResult":
+            switch command["result"] as? String {
+            case "available": updateDriver.finish(.available("1.0.8"))
+            case "error": updateDriver.finish(.failed)
+            default: updateDriver.finish(.upToDate)
+            }
+        case "installUpdate": updateDriver.install()
         case "openSetup": onboarding?.present()
         case "closeSetup": onboarding?.close()
         case "setupMicrophone": onboarding?.model.enableMicrophone()
@@ -141,7 +172,7 @@ final class EndToEndBridge {
         case "settingsGlow": settingsModel?.glow.updateIntensity(command["value"] as? Double ?? 0.5)
         case "settingsGlowArrow":
             guard let slider = glowSlider(), let window = slider.window else { throw BridgeError.invalidCommand }
-            window.makeFirstResponder(slider)
+            guard window.makeFirstResponder(slider) else { throw BridgeError.invalidCommand }
             let right = command["right"] as? Bool ?? true
             guard let event = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [],
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
@@ -330,11 +361,19 @@ final class EndToEndBridge {
             "settingsGlow": settingsModel?.glow.intensity ?? 0.5,
             "settingsGlowLabel": glowSlider()?.accessibilityLabel() ?? "",
             "settingsGlowDescription": glowSlider()?.accessibilityValueDescription() ?? "",
+            "settingsGlowFocused": glowSlider().map { $0.window?.firstResponder === $0 } ?? false,
             "settingsVerifying": settingsModel?.verifying ?? false,
             "settingsVerified": settingsModel?.verified ?? false,
             "settingsKeyMask": settingsModel?.maskedKey ?? "",
             "settingsKeyError": settingsModel?.keyError ?? "",
             "settingsStoredKey": settingsCredentials.key != nil,
+            "updatesCanCheck": updateModel?.canCheck ?? false,
+            "updatesAutomatic": updateModel?.automaticallyChecks ?? false,
+            "updatesTitle": updateModel?.buttonTitle ?? "",
+            "updatesStatus": updateModel?.statusText ?? "",
+            "updatesChecks": updateDriver.checks,
+            "updatesInstalls": updateDriver.installs,
+            "updatesWaiting": updateModel?.waitingToInstall ?? false,
             "panels": panels.map { panel -> [String: Any] in
                 ["number": panel.windowNumber, "visible": panel.isVisible,
                  "key": panel.isKeyWindow, "main": panel.isMainWindow,
@@ -347,6 +386,15 @@ final class EndToEndBridge {
                  "matchesScreen": NSScreen.screens.contains { $0.frame == panel.frame }]
             }
         ]
+    }
+
+    private func updateCommand(in menu: NSMenu?) -> (NSMenu, Int)? {
+        guard let menu else { return nil }
+        for (index, item) in menu.items.enumerated() {
+            if item.title == updateModel?.buttonTitle { return (menu, index) }
+            if let found = updateCommand(in: item.submenu) { return found }
+        }
+        return nil
     }
 
     private func settingsCommand(in menu: NSMenu?) -> (NSMenu, Int)? {
@@ -542,5 +590,23 @@ final class FixtureDestinationAccess: DestinationAccess {
         self.changed = change; self.interaction = interaction
     }
     func stopObserving() { changed = nil; interaction = nil }
+}
+@MainActor private final class FixtureUpdateDriver: UpdateDriving {
+    weak var delegate: (any UpdateDriverDelegate)?
+    var canCheck = false
+    var automaticallyChecks = true
+    var lastCheck: Date?
+    var status: UpdateStatus = .idle
+    var checks = 0, installs = 0
+    func start() throws { canCheck = true }
+    func check() { checks += 1; canCheck = false; status = .checking }
+    func finish(_ result: UpdateStatus) {
+        status = result; canCheck = true; lastCheck = Date()
+        delegate?.updateDriverChanged()
+    }
+    func install() {
+        let callback: () -> Void = { [weak self] in self?.installs += 1 }
+        if delegate?.postponeInstallation(callback) != true { callback() }
+    }
 }
 #endif

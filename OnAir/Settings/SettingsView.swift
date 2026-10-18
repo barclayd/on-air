@@ -13,24 +13,29 @@ private enum SettingsPalette {
 
 struct SettingsView: View {
     @Bindable var model: SettingsModel
+    let updates: UpdateModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 30) {
-                DictationNotesSettingsSection(model: model)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 30) {
+                    DictationNotesSettingsSection(model: model)
 
-                Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+                    Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
-                RecordingGlowSettingsSection(preferences: model.glow)
+                    RecordingGlowSettingsSection(preferences: model.glow)
 
-                Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
+                    Rectangle().fill(.white.opacity(0.06)).frame(height: 1)
 
-                APIKeySettingsSection(model: model)
+                    APIKeySettingsSection(model: model)
+                }
+                .padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 32)
             }
-            .padding(.horizontal, 32).padding(.top, 28).padding(.bottom, 32)
+            Rectangle().fill(.white.opacity(0.06)).frame(height: 1).padding(.horizontal, 32)
+            updatesSection.padding(.horizontal, 32).padding(.vertical, 20)
         }
-        .frame(width: 520)
+        .frame(width: 520, height: min(780, (NSScreen.main?.visibleFrame.height ?? 880) - 100))
         .foregroundStyle(SettingsPalette.text)
         .background(SettingsPalette.background.ignoresSafeArea())
         .background(SettingsWindowChrome(onClose: { model.dismiss(owner: "settings") }))
@@ -54,6 +59,35 @@ struct SettingsView: View {
             model.present(owner: "settings")
         }
         .onDisappear { model.dismiss(owner: "settings") }
+    }
+
+    private var updatesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("Updates").font(.system(size: 14, weight: .semibold))
+                Spacer()
+                Text("Version \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "")")
+                    .font(.system(size: 12)).foregroundStyle(SettingsPalette.secondary)
+            }
+            HStack {
+                Toggle("Automatically check for updates", isOn: Binding(
+                    get: { updates.automaticallyChecks }, set: { updates.setAutomaticallyChecks($0) }))
+                    .toggleStyle(.checkbox).font(.system(size: 12))
+                    .accessibilityIdentifier("settings.automatic-updates")
+                Spacer(minLength: 8)
+                Button(updates.buttonTitle, action: updates.check)
+                    .controlSize(.small).disabled(!updates.canCheck)
+                    .accessibilityIdentifier("settings.check-updates")
+            }
+            if let text = updates.statusText {
+                Text(text).font(.system(size: 12)).foregroundStyle(SettingsPalette.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("settings.update-status")
+            } else if let date = updates.lastCheck {
+                Text("Last checked \(date.formatted(date: .abbreviated, time: .shortened))")
+                    .font(.system(size: 12)).foregroundStyle(SettingsPalette.secondary)
+            }
+        }
     }
 
     private var title: some View {

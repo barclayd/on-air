@@ -6,7 +6,7 @@ Run from the repository root:
 Tools/test.sh
 ```
 
-The suite currently contains **70 application E2E tests and two visual regression tests comparing twelve reference images and the glow intensity scale**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes a few minutes on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
+The suite currently contains **73 application E2E tests and two visual regression tests comparing twelve reference images and the glow intensity scale**, preceded by onboarding, settings, credential-parser, PCM/WAV, version-formatting, and clipboard checks. An incremental run takes a few minutes on this Mac. It needs macOS 14+, the full Xcode installation selected with `xcode-select`, and an unlocked desktop session with a display. A headless Linux runner cannot run these tests. On a macOS CI machine, run under a logged-in GUI user and retain `.build/e2e/tests.log` and `.build/e2e/artifacts/` on failure.
 
 Tests run serially. Brief glows appear during the run. Leave focus and the clipboard alone during the main interaction test, which explicitly checks that neither changes. Do not pass `--parallel` or run two copies of the suite in one desktop session.
 
@@ -131,3 +131,7 @@ This opt-in check compiles the production destination adapter and transcript ins
 Native fixture coverage does not establish compatibility with every third-party editor. Before release, also check physical Fn dictation in Codex, Chrome and Slack, including full-screen Spaces, app focus theft, intentional navigation and a destination that closes mid-transcription. The normal glow, status text and menu must remain unchanged.
 
 On 18 October 2026, the updated native integration check passed all nine checks on this Mac, including actual clicks into another app and another field, restoration of the original selection, paste delivery, navigation before restoration and clipboard preservation. This is fixture-window coverage, not a claim that physical Fn, microphone capture or every third-party editor was retested.
+
+## Updates
+
+See [UPDATING.md](UPDATING.md) for the updater checks, actual Sparkle/signature fixtures, nonpublishing release validation, and the final signed replacement acceptance test. Keep desktop tests serial and the session unlocked; macOS can refuse native keyboard/menu dispatch while showing the lock screen.

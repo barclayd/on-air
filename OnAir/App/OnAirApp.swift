@@ -15,11 +15,17 @@ struct OnAirApp: App {
                 .accessibilityLabel("On Air — \(delegate.controller.statusText)")
         }
         Settings {
-            SettingsView(model: delegate.settings)
+            SettingsView(model: delegate.settings, updates: delegate.updates)
         }
         .windowStyle(.hiddenTitleBar)
         .windowToolbarStyle(.unifiedCompact)
         .windowResizability(.contentSize)
+        .commands {
+            CommandGroup(after: .appInfo) {
+                Button(delegate.updates.buttonTitle, action: delegate.updates.check)
+                    .disabled(!delegate.updates.canCheck)
+            }
+        }
     }
 }
 
@@ -57,16 +63,22 @@ final class OnAirDelegate: NSObject, NSApplicationDelegate {
     lazy var controller = bridge.makeController()
     lazy var settings = bridge.makeSettings(controller: controller)
     lazy var onboarding = bridge.makeOnboarding(settings: settings, controller: controller)
+    lazy var updates = bridge.makeUpdates(controller: controller)
     #else
     let controller = PrototypeController()
     lazy var settings = SettingsModel(glow: controller.glow, didChange: { [weak self] in self?.controller.settingsDidChange() })
     lazy var onboarding = OnboardingWindowController(model: OnboardingModel(settings: settings), controller: controller)
+    lazy var updates = UpdateModel(driver: SparkleUpdateDriver(), dictationIsBusy: { [weak self] in
+        guard let self else { return false }
+        return controller.isVisible || controller.canRetry || controller.pendingTranscriptCount > 0
+    })
     #endif
 
     func showSetup() { onboarding.present() }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApplication.shared.setActivationPolicy(.accessory)
+        updates.start()
         #if E2E_TESTING
         _ = onboarding
         bridge.start(controller: controller)

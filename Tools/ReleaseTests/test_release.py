@@ -16,7 +16,76 @@ release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
 
 
+def fixture_feed(directory, details, data):
+    name = 'On-Air-' + details['tag'] + '.dmg'
+    channel = '<sparkle:channel>beta</sparkle:channel>' if details['prerelease'] else ''
+    feed = directory / 'appcast.xml'
+    feed.write_text(f'''<rss xmlns:sparkle="{release.SPARKLE_NS}"><channel><item>
+        <sparkle:version>{details['build']}</sparkle:version>
+        <sparkle:shortVersionString>{details['version']}</sparkle:shortVersionString>
+        <sparkle:minimumSystemVersion>14.0</sparkle:minimumSystemVersion>{channel}
+        <enclosure url="{release.RELEASE_URL}download/{details['tag']}/{name}"
+        length="{len(data)}" sparkle:edSignature="{base64.b64encode(bytes(64)).decode()}"/>
+        </item></channel></rss>''')
+    digest = hashlib.sha256(feed.read_bytes()).hexdigest()
+    (directory / 'appcast.xml.sha256').write_text(digest + '  appcast.xml\n')
+    return digest
+
+
 class ReleaseTests(unittest.TestCase):
+    def test_nested_signing_is_inside_out_and_keeps_helper_entitlements(self):
+        with tempfile.TemporaryDirectory() as folder:
+            app = Path(folder)
+            framework = app / 'Contents/Frameworks/Sparkle.framework/Versions/B'
+            for child in ('XPCServices/Downloader.xpc', 'XPCServices/Installer.xpc', 'Autoupdate', 'Updater.app'):
+                (framework / child).mkdir(parents=True)
+            with patch.object(release, 'run') as run:
+                release.sign_nested_code(app, 'keychain', 'identity', app)
+            calls = [call.args[1] for call in run.call_args_list]
+            self.assertEqual([Path(args[-1]).name for args in calls[:-1]], ['Downloader.xpc', 'Installer.xpc', 'Autoupdate', 'Updater.app', 'B'])
+            self.assertTrue(all('--deep' not in args and '--preserve-metadata=entitlements' in args for args in calls[:-1]))
+            self.assertEqual(calls[-1][1:4], ['--verify', '--deep', '--strict'])
+
+    def test_missing_updater_configuration_or_framework_fails_closed(self):
+        source = plistlib.loads((release.ROOT / 'OnAir/Info.plist').read_bytes())
+        with tempfile.TemporaryDirectory() as folder:
+            app = Path(folder)
+            with self.assertRaisesRegex(release.ReleaseError, 'not embedded'):
+                release.verify_updater(app, source)
+            for key, value in [('SURequireSignedFeed', False), ('SUVerifyUpdateBeforeExtraction', False),
+                               ('SUFeedURL', 'http://untrusted.example/feed.xml'), ('SUPublicEDKey', 'wrong'),
+                               ('SUSignedFeedFailureExpirationInterval', 1728000)]:
+                with self.subTest(key=key), self.assertRaisesRegex(release.ReleaseError, 'configuration'):
+                    release.verify_updater(app, {**source, key: value})
+
+    def test_feed_metadata_rejects_retargeted_wrong_version_and_prerelease_updates(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            details = release.metadata('v1.2.3', '42')
+            dmg = directory / 'On-Air-v1.2.3.dmg'
+            dmg.write_bytes(b'fixture')
+            fixture_feed(directory, details, dmg.read_bytes())
+            feed = directory / 'appcast.xml'
+            original = feed.read_text()
+            release.validate_appcast(feed, dmg, details)
+            for before, after in [('>42<', '>41<'), ('>1.2.3<', '>1.2.2<'), ('>14.0<', '>13.0<'),
+                                  ('download/v1.2.3/', 'download/v1.2.2/'), ('length="7"', 'length="8"'),
+                                  ('</item>', '<sparkle:channel>beta</sparkle:channel></item>')]:
+                feed.write_text(original.replace(before, after))
+                with self.subTest(after=after), self.assertRaises(release.ReleaseError):
+                    release.validate_appcast(feed, dmg, details)
+            feed.write_text(original)
+            with self.assertRaises(release.ReleaseError):
+                release.validate_appcast(feed, dmg, {**details, 'prerelease': True})
+
+    def test_untrusted_tool_archive_is_never_extracted(self):
+        with tempfile.TemporaryDirectory() as folder:
+            directory = Path(folder)
+            (directory / f'Sparkle-{release.SPARKLE_VERSION}.tar.xz').write_bytes(b'wrong archive')
+            with self.assertRaisesRegex(release.ReleaseError, 'tools checksum'):
+                release.sparkle_tools(directory)
+            self.assertFalse((directory / 'generate_appcast').exists())
+
     def test_version_and_prerelease_classification(self):
         self.assertEqual(release.metadata('v1.2.3', '42'),
                          {'tag': 'v1.2.3', 'version': '1.2.3', 'build': '42', 'prerelease': False})
@@ -53,7 +122,7 @@ class ReleaseTests(unittest.TestCase):
                                                        (b'arm64', b'production', False),
                                                        (b'arm64 x86_64', b'EndToEndBridge', False)]:
                 results = [subprocess.CompletedProcess([], 0, architectures), subprocess.CompletedProcess([], 0, symbols)]
-                with self.subTest(architectures=architectures, symbols=symbols), patch.object(release, 'run', side_effect=results):
+                with self.subTest(architectures=architectures, symbols=symbols), patch.object(release, 'run', side_effect=results), patch.object(release, 'verify_updater'):
                     if accepted:
                         release.verify_app(app, expected)
                     else:
@@ -96,11 +165,12 @@ class ReleaseTests(unittest.TestCase):
                 release.developer_identity(output, 'ABCDE12345')
 
     def test_child_tools_do_not_inherit_secrets_and_errors_do_not_print_argv(self):
-        with patch.dict(os.environ, {'APPLE_CERTIFICATE_PASSWORD': 'secret-pass', 'OPENAI_API_KEY': 'test-secret', 'GH_TOKEN': 'test-token'}):
+        with patch.dict(os.environ, {'APPLE_CERTIFICATE_PASSWORD': 'secret-pass', 'OPENAI_API_KEY': 'test-secret', 'GH_TOKEN': 'test-token', 'SPARKLE_PRIVATE_KEY': 'test-update-key'}):
             environment = release.child_environment()
             self.assertNotIn('APPLE_CERTIFICATE_PASSWORD', environment)
             self.assertNotIn('OPENAI_API_KEY', environment)
             self.assertNotIn('GH_TOKEN', environment)
+            self.assertNotIn('SPARKLE_PRIVATE_KEY', environment)
             with patch.object(subprocess, 'run', return_value=subprocess.CompletedProcess([], 1, b'')):
                 with self.assertRaises(release.ReleaseError) as error:
                     release.run('Import certificate', ['security', '-P', 'secret-pass'])
@@ -176,6 +246,7 @@ class ReleaseTests(unittest.TestCase):
             (directory / 'On-Air.dmg.sha256').write_text(digest + '  On-Air.dmg\n')
             good = {**release.metadata('v1.2.3', '1'), 'signed_notarized': True, 'file': name,
                     'download_file': 'On-Air.dmg', 'sha256': digest, 'commit': 'source-commit'}
+            good['appcast_sha256'] = fixture_feed(directory, good, data)
             manifest = directory / 'release.json'
             manifest.write_text(json.dumps(good))
             self.assertEqual(release.verify_publishable(directory, 'v1.2.3', 'source-commit'), good)
@@ -214,7 +285,9 @@ class ReleaseTests(unittest.TestCase):
                     destination.write_bytes(b'disk image')
                 with patch.object(release, 'require_credentials'), patch.object(release, 'verify_app'), \
                      patch.object(release, 'run', side_effect=fake_run), patch.object(release, 'notarize'), \
-                     patch.object(release, 'signing_assets') as signing, patch.object(release, 'create_dmg', side_effect=fake_dmg):
+                     patch.object(release, 'signing_assets') as signing, patch.object(release, 'create_dmg', side_effect=fake_dmg), \
+                     patch.object(release, 'sign_nested_code'), \
+                     patch.object(release, 'create_appcast', side_effect=lambda dmg, details, *args: fixture_feed(dmg.parent, details, dmg.read_bytes())):
                     signing.return_value.__enter__.return_value = ('keychain', 'identity', 'key.p8')
                     info = release.build_package('v1.2.3', '1', folder, unsigned)
                 directory = Path(folder) / 'dist'
@@ -241,7 +314,7 @@ class ReleaseTests(unittest.TestCase):
             with patch.object(release, 'require_credentials'), patch.object(release, 'verify_app'), \
                  patch.object(release, 'run', side_effect=fake_run), \
                  patch.object(release, 'signing_assets') as signing, patch.object(release, 'create_dmg') as dmg, \
-                 patch.object(release, 'notarize', side_effect=release.ReleaseError('Rejected')):
+                 patch.object(release, 'notarize', side_effect=release.ReleaseError('Rejected')), patch.object(release, 'sign_nested_code'):
                 signing.return_value.__enter__.return_value = ('keychain', 'identity', 'key.p8')
                 with self.assertRaisesRegex(release.ReleaseError, 'Rejected'):
                     release.build_package('v1.2.3', '1', folder)

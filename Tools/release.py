@@ -15,13 +15,22 @@ import shutil
 import signal
 import subprocess
 import sys
+import tarfile
 import tempfile
+import urllib.request
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 CREDENTIALS = (
     'APPLE_CERTIFICATE_P12_BASE64', 'APPLE_CERTIFICATE_PASSWORD',
     'APPLE_NOTARY_KEY_P8_BASE64', 'APPLE_NOTARY_KEY_ID', 'APPLE_NOTARY_ISSUER_ID',
+    'SPARKLE_PRIVATE_KEY',
 )
+SPARKLE_VERSION = '2.10.0'
+SPARKLE_TOOLS_SHA256 = 'c2bf58aa8387266ac179357b1415d6f2635f044da8be41042af32425dae6da0c'
+SPARKLE_NS = 'http://www.andymatuschak.org/xml-namespaces/sparkle'
+FEED_URL = 'https://github.com/barclayd/on-air/releases/latest/download/appcast.xml'
+RELEASE_URL = 'https://github.com/barclayd/on-air/releases/'
 
 
 class ReleaseError(Exception):
@@ -40,10 +49,10 @@ def child_environment():
     return {k: v for k, v in os.environ.items() if k not in CREDENTIALS and k not in ('OPENAI_API_KEY', 'GH_TOKEN', 'GITHUB_TOKEN')}
 
 
-def run(label, arguments, log=None, check=True):
+def run(label, arguments, log=None, check=True, input=None):
     print(label, flush=True)
     result = subprocess.run([str(x) for x in arguments], cwd=ROOT, env=child_environment(),
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, input=input)
     if log:
         Path(log).write_bytes(result.stdout)
     if check and result.returncode:
@@ -152,6 +161,109 @@ def verify_app(app, expected):
     symbols = run('Check production isolation', ['nm', binary]).stdout
     if b'EndToEndBridge' in symbols or b'FixtureTranscriber' in symbols:
         raise ReleaseError('Test controls must not be included in a release.')
+    verify_updater(app, info)
+
+
+def verify_updater(app, info):
+    source = plistlib.loads((ROOT / 'OnAir/Info.plist').read_bytes())
+    checks = {'SUFeedURL': FEED_URL, 'SUPublicEDKey': source['SUPublicEDKey'],
+              'SURequireSignedFeed': True, 'SUVerifyUpdateBeforeExtraction': True,
+              'SUSignedFeedFailureExpirationInterval': 0,
+              'SUAllowsAutomaticUpdates': False, 'SUEnableSystemProfiling': False}
+    if any(info.get(k) != v for k, v in checks.items()):
+        raise ReleaseError('Archived updater configuration does not match the signed stable feed.')
+    framework = app / 'Contents/Frameworks/Sparkle.framework'
+    if not (framework / 'Sparkle').is_file():
+        raise ReleaseError('Sparkle is not embedded in the app.')
+    framework_info = plistlib.loads((framework / 'Resources/Info.plist').read_bytes())
+    if framework_info.get('CFBundleShortVersionString') != SPARKLE_VERSION:
+        raise ReleaseError('Embedded Sparkle version does not match the pinned signing tools.')
+
+
+def sign_nested_code(app, keychain, identity, logs):
+    framework = app / 'Contents/Frameworks/Sparkle.framework/Versions/B'
+    # Sign from the inside out. Do not use --deep for signing or apply the
+    # microphone entitlement to Sparkle's installer and downloader processes.
+    paths = [framework / 'XPCServices/Downloader.xpc', framework / 'XPCServices/Installer.xpc',
+             framework / 'Autoupdate', framework / 'Updater.app', framework]
+    for index, path in enumerate(paths):
+        if not path.exists():
+            raise ReleaseError('Missing Sparkle signing component: ' + path.name)
+        run('Sign Sparkle ' + path.name, ['codesign', '--force', '--sign', identity, '--keychain', keychain,
+            '--options', 'runtime', '--timestamp', '--preserve-metadata=entitlements', path], log=logs / f'sparkle-signing-{index}.log')
+    run('Verify nested Sparkle signatures', ['codesign', '--verify', '--deep', '--strict', framework])
+
+
+def sparkle_tools(directory):
+    directory = Path(directory)
+    directory.mkdir(parents=True, exist_ok=True)
+    archive = directory / f'Sparkle-{SPARKLE_VERSION}.tar.xz'
+    if not archive.exists():
+        url = f'https://github.com/sparkle-project/Sparkle/releases/download/{SPARKLE_VERSION}/{archive.name}'
+        with urllib.request.urlopen(url, timeout=60) as response, archive.open('wb') as output:
+            shutil.copyfileobj(response, output)
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != SPARKLE_TOOLS_SHA256:
+        raise ReleaseError('Sparkle signing tools checksum mismatch.')
+    # Only the two self-contained tools are required, never extract arbitrary
+    # archive paths or symlinks. Verify the archive before executing either.
+    with tarfile.open(archive) as contents:
+        for name in ('generate_appcast', 'sign_update'):
+            member = contents.getmember('./bin/' + name)
+            if not member.isfile():
+                raise ReleaseError('Unexpected Sparkle tool archive entry.')
+            target = directory / name
+            target.write_bytes(contents.extractfile(member).read())
+            target.chmod(0o755)
+    return directory
+
+
+def validate_appcast(feed, dmg, details):
+    try:
+        root = ET.fromstring(feed.read_bytes())
+        items = root.findall('./channel/item')
+        if len(items) != 1:
+            raise ValueError('Expected one full update')
+        item = items[0]
+        enclosure = item.find('enclosure')
+        signature = enclosure.get('{' + SPARKLE_NS + '}edSignature', '')
+        expected_url = RELEASE_URL + 'download/' + details['tag'] + '/' + dmg.name
+        if (item.findtext('{' + SPARKLE_NS + '}version') != details['build'] or
+                item.findtext('{' + SPARKLE_NS + '}shortVersionString') != details['version'] or
+                item.findtext('{' + SPARKLE_NS + '}minimumSystemVersion') != '14.0' or
+                enclosure.get('url') != expected_url or enclosure.get('length') != str(dmg.stat().st_size) or
+                len(base64.b64decode(signature, validate=True)) != 64):
+            raise ValueError('Update metadata mismatch')
+        # Prereleases live on their own release pages and may never be offered
+        # as stable updates, even if somebody fetches their feed manually.
+        channel = item.findtext('{' + SPARKLE_NS + '}channel')
+        if channel != ('beta' if details['prerelease'] else None):
+            raise ValueError('Update channel mismatch')
+        return signature
+    except (ET.ParseError, ValueError, AttributeError) as error:
+        raise ReleaseError('Invalid update feed metadata.') from error
+
+
+def create_appcast(dmg, details, work, logs):
+    tools = sparkle_tools(work / 'sparkle-tools')
+    updates = work / 'updates'
+    updates.mkdir()
+    shutil.copyfile(dmg, updates / dmg.name)
+    feed = dmg.parent / 'appcast.xml'
+    arguments = [tools / 'generate_appcast', '--ed-key-file', '-', '--maximum-deltas', '0',
+                 '--maximum-versions', '1', '--download-url-prefix', RELEASE_URL + 'download/' + details['tag'] + '/',
+                 '--full-release-notes-url', RELEASE_URL + 'tag/' + details['tag'], '-o', feed]
+    if details['prerelease']:
+        arguments += ['--channel', 'beta']
+    arguments.append(updates)
+    # Pass the signing seed on stdin, never in argv, logs, or a file artifact.
+    key = os.environ['SPARKLE_PRIVATE_KEY'].strip().encode()
+    run('Generate signed Sparkle feed', arguments, input=key, log=logs / 'appcast.log')
+    signature = validate_appcast(feed, dmg, details)
+    run('Verify update archive signature', [tools / 'sign_update', '--ed-key-file', '-', '--verify', dmg, signature], input=key)
+    run('Verify signed update feed', [tools / 'sign_update', '--ed-key-file', '-', '--verify', feed], input=key)
+    digest = hashlib.sha256(feed.read_bytes()).hexdigest()
+    (feed.parent / 'appcast.xml.sha256').write_text(digest + '  appcast.xml\n')
+    return digest
 
 
 def build_package(tag, build, output, unsigned=False):
@@ -170,7 +282,7 @@ def build_package(tag, build, output, unsigned=False):
         archive = work / 'OnAir.xcarchive'
         run('Archive universal Release', ['xcodebuild', '-project', 'OnAir.xcodeproj', '-scheme', 'OnAir',
             '-configuration', 'Release', '-destination', 'generic/platform=macOS', '-archivePath', archive,
-            '-derivedDataPath', work / 'DerivedData', 'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO',
+            '-derivedDataPath', work / 'DerivedData', '-packageAuthorizationProvider', 'netrc', 'CODE_SIGNING_ALLOWED=NO', 'CODE_SIGNING_REQUIRED=NO',
             'CODE_SIGN_IDENTITY=', 'ONLY_ACTIVE_ARCH=NO', 'ARCHS=arm64 x86_64', 'SKIP_INSTALL=NO',
             'MARKETING_VERSION=' + details['version'], 'CURRENT_PROJECT_VERSION=' + build, 'archive'], log=logs / 'archive.log')
         app = archive / 'Products/Applications/On Air.app'
@@ -181,10 +293,11 @@ def build_package(tag, build, output, unsigned=False):
             create_dmg(app, dmg, work, logs)
         else:
             with signing_assets() as (keychain, identity, key):
+                sign_nested_code(app, keychain, identity, logs)
                 run('Sign app with Developer ID', ['codesign', '--force', '--sign', identity, '--keychain', keychain,
                     '--options', 'runtime', '--timestamp', '--entitlements', ROOT / 'OnAir/OnAir.entitlements', app],
                     log=logs / 'app-signing.log')
-                run('Verify app signature', ['codesign', '--verify', '--strict', app])
+                run('Verify app signature', ['codesign', '--verify', '--deep', '--strict', app])
                 archive_zip = work / 'OnAir.zip'
                 run('Package app for notarization', ['ditto', '-c', '-k', '--keepParent', app, archive_zip])
                 notarize(archive_zip, key, logs, 'app')
@@ -211,6 +324,8 @@ def build_package(tag, build, output, unsigned=False):
         details.update({'signed_notarized': not unsigned, 'file': name, 'sha256': digest,
                         'download_file': download_name,
                         'commit': run('Record source commit', ['git', 'rev-parse', 'HEAD']).stdout.decode().strip()})
+        if not unsigned:
+            details['appcast_sha256'] = create_appcast(dmg, details, work, logs)
         (dist / 'release.json').write_text(json.dumps(details, indent=2) + '\n')
     return details
 
@@ -240,6 +355,14 @@ def verify_publishable(directory, tag, commit):
         digest = hashlib.sha256((directory / asset).read_bytes()).hexdigest()
         if digest != info.get('sha256') or (directory / (asset + '.sha256')).read_text() != digest + '  ' + asset + '\n':
             raise ReleaseError('Release asset checksum mismatch: ' + asset)
+    feed = directory / 'appcast.xml'
+    if not feed.is_file() or not (directory / 'appcast.xml.sha256').is_file():
+        raise ReleaseError('Signed update feed is missing.')
+    digest = hashlib.sha256(feed.read_bytes()).hexdigest()
+    if (digest != info.get('appcast_sha256') or
+            (directory / 'appcast.xml.sha256').read_text() != digest + '  appcast.xml\n'):
+        raise ReleaseError('Signed update feed checksum mismatch.')
+    validate_appcast(feed, directory / name, info)
     return info
 
 
