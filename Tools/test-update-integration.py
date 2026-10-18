@@ -53,7 +53,7 @@ def main():
                 'SUAllowsAutomaticUpdates': False, 'NSAppTransportSecurity': {'NSAllowsLocalNetworking': True}}
         (contents / 'Info.plist').write_bytes(plistlib.dumps(info))
         try:
-            for mode, version in [('current', '10'), ('available', '11'), ('error', '12')]:
+            for mode, version in [('current', '10'), ('available', '11'), ('background-available', '11'), ('error', '12')]:
                 feed.write_text(f'''<?xml version="1.0"?><rss version="2.0" xmlns:sparkle="{release.SPARKLE_NS}"><channel>
                     <title>Disposable fixture</title><item><title>Fixture release</title>
                     <sparkle:version>{version}</sparkle:version><sparkle:shortVersionString>1.0.8</sparkle:shortVersionString>
@@ -73,7 +73,7 @@ def main():
         finally:
             server.shutdown()
             subprocess.run(['defaults', 'delete', identifier], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    print('PASS: real Sparkle current/update/tampered/missing feeds and persisted settings. No app replacement performed.')
+    print('PASS: real Sparkle current/update/tampered/missing feeds, quiet background discovery, visible update windows, and persisted settings. No app replacement performed.')
 
 
 if __name__ == '__main__':
