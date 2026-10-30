@@ -61,8 +61,8 @@ For an intentional design change, render into a separate review directory:
 
 ```sh
 mkdir -p .build/visual-review
-xcrun swiftc -parse-as-library OnAir/Overlay/GlowFrame.swift \
-  OnAir/Overlay/GlowRenderer.swift Tools/RenderPreview.swift \
+xcrun swiftc -parse-as-library Packages/OnAirCore/Sources/OnAirVisuals/GlowFrame.swift \
+  Packages/OnAirCore/Sources/OnAirVisuals/GlowRenderer.swift Tools/RenderPreview.swift \
   -o .build/visual-review/render-preview
 .build/visual-review/render-preview .build/visual-review
 ```
@@ -101,8 +101,8 @@ Normal regression tests make no OpenAI calls. Live checks are opt-in and bill th
 
 ```sh
 xcrun swiftc -swift-version 6 -parse-as-library \
-  OnAir/Transcription/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
-  OnAir/Transcription/OpenAITranscriber.swift OnAir/Settings/DictationPreferences.swift \
+  Packages/OnAirCore/Sources/OnAirCore/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
+  Packages/OnAirCore/Sources/OnAirCore/OpenAITranscriber.swift Packages/OnAirCore/Sources/OnAirCore/DictationPreferences.swift \
   Tools/TranscriptionSmoke.swift \
   -o .build/transcription-smoke
 .build/transcription-smoke .build/benchmarks/synthetic-10.wav

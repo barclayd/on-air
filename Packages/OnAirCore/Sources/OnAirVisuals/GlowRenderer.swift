@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Native translation of the glow and travelling line in the supplied On Air film.
-enum GlowRenderer {
-    static func draw(in context: GraphicsContext, size: CGSize, frame: GlowFrame) {
+public enum GlowRenderer {
+    public static func draw(in context: GraphicsContext, size: CGSize, frame: GlowFrame) {
         guard frame.opacity > 0.001, frame.presence > 0.001 else { return }
 
         // Authoring coordinates from the film; adapt height and width independently per display.

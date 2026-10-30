@@ -4,7 +4,7 @@ import OSLog
 /// A serial send chain keeps append/commit ordering intact, including a cold connection.
 /// A cancelled/failed turn closes its socket, preventing late events entering a later hold.
 @MainActor
-final class OpenAITranscriber: Transcribing {
+public final class OpenAITranscriber: Transcribing {
     private let key: () throws -> String
     private let notes: () -> String
     private var connectionPrompt: String?
@@ -26,16 +26,16 @@ final class OpenAITranscriber: Transcribing {
     private var turnError: Error?
     private let logger = Logger(subsystem: "com.danbarclay.onair", category: "Transcription")
 
-    init(key: @escaping () throws -> String = APIKeyStore.load, session: URLSession = .shared,
+    public init(key: @escaping () throws -> String, session: URLSession = .shared,
          endpoint: URL = URL(string: "wss://api.openai.com/v1/realtime?intent=transcription")!,
-         notes: @escaping () -> String = { UserDefaults.standard.string(forKey: DictationPreferences.notesKey) ?? "" }) {
+         notes: @escaping () -> String = { "" }) {
         self.key = key
         self.notes = notes
         self.session = session
         self.endpoint = endpoint
     }
 
-    func warm() {
+    public func warm() {
         refreshPromptIfIdle()
         _ = ensureConnection()
         guard maintenance == nil else { return }
@@ -124,7 +124,7 @@ final class OpenAITranscriber: Transcribing {
         return task
     }
 
-    func begin() {
+    public func begin() {
         if turn != nil { cancel() }
         refreshPromptIfIdle()
         turn = UUID()
@@ -136,7 +136,7 @@ final class OpenAITranscriber: Transcribing {
         _ = ensureConnection()
     }
 
-    func append(_ pcm: Data) {
+    public func append(_ pcm: Data) {
         guard let turn, !pcm.isEmpty, !finishing else { return }
         let connection = ensureConnection()
         let previous = sendTail
@@ -152,7 +152,7 @@ final class OpenAITranscriber: Transcribing {
         }
     }
 
-    func finish() async throws -> String {
+    public func finish() async throws -> String {
         guard let turn else { throw turnError ?? TranscriptionError.noAudio }
         finishing = true
         deadline = Task { [weak self] in
@@ -222,13 +222,13 @@ final class OpenAITranscriber: Transcribing {
         result.resume(returning: text)
     }
 
-    func retry(_ pcm: Data) async throws -> String {
+    public func retry(_ pcm: Data) async throws -> String {
         guard !pcm.isEmpty else { throw TranscriptionError.noAudio }
         return try await FileTranscription.transcribe(pcm: pcm, key: key(), session: session,
             prompt: DictationPreferences.prompt(notes: notes()))
     }
 
-    func verifyConnection() async throws {
+    public func verifyConnection() async throws {
         try await withTaskCancellationHandler {
             try await ensureConnection().value
         } onCancel: {
@@ -242,8 +242,8 @@ final class OpenAITranscriber: Transcribing {
         disconnect(error: CancellationError())
     }
 
-    func cancel() { disconnect(error: CancellationError()) }
-    func shutdown() {
+    public func cancel() { disconnect(error: CancellationError()) }
+    public func shutdown() {
         maintenance?.cancel()
         maintenance = nil
         cancel()
@@ -298,8 +298,8 @@ final class OpenAITranscriber: Transcribing {
     }
 }
 
-enum FileTranscription {
-    static func transcribe(pcm: Data, key: String, session: URLSession,
+public enum FileTranscription {
+    public static func transcribe(pcm: Data, key: String, session: URLSession,
                            prompt: String = DictationPreferences.basePrompt) async throws -> String {
         let boundary = UUID().uuidString
         var body = Data()
@@ -327,7 +327,7 @@ enum FileTranscription {
         catch { if Task.isCancelled { throw CancellationError() }; throw TranscriptionError.connection }
     }
 
-    static func wav(_ pcm: Data) -> Data {
+    public static func wav(_ pcm: Data) -> Data {
         var header = Data("RIFF".utf8)
         func append<T: FixedWidthInteger>(_ value: T) { var le = value.littleEndian; withUnsafeBytes(of: &le) { header.append(contentsOf: $0) } }
         append(UInt32(36 + pcm.count)); header.append(Data("WAVEfmt ".utf8))

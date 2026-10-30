@@ -20,8 +20,8 @@ fi
 export ON_AIR_TEST_EXECUTABLE="$test_root/DerivedData/Build/Products/Debug/OnAirE2E.app/Contents/MacOS/OnAirE2E"
 export ON_AIR_TEST_ARTIFACTS="$test_root/artifacts"
 export ON_AIR_PREVIEW_EXECUTABLE="$test_root/render-preview"
-xcrun swiftc -parse-as-library OnAir/Overlay/GlowFrame.swift \
-    OnAir/Overlay/GlowRenderer.swift Tools/RenderPreview.swift -o "$ON_AIR_PREVIEW_EXECUTABLE"
+xcrun swiftc -parse-as-library Packages/OnAirCore/Sources/OnAirVisuals/GlowFrame.swift \
+    Packages/OnAirCore/Sources/OnAirVisuals/GlowRenderer.swift Tools/RenderPreview.swift -o "$ON_AIR_PREVIEW_EXECUTABLE"
 
 # Serial execution is intentional: the tests share one macOS WindowServer session.
 # XCTest remains a separate process and never links the app's source or controller.
