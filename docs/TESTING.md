@@ -61,8 +61,8 @@ For an intentional design change, render into a separate review directory:
 
 ```sh
 mkdir -p .build/visual-review
-xcrun swiftc -parse-as-library OnAir/Overlay/GlowFrame.swift \
-  OnAir/Overlay/GlowRenderer.swift Tools/RenderPreview.swift \
+xcrun swiftc -parse-as-library Packages/OnAirCore/Sources/OnAirVisuals/GlowFrame.swift \
+  Packages/OnAirCore/Sources/OnAirVisuals/GlowRenderer.swift Tools/RenderPreview.swift \
   -o .build/visual-review/render-preview
 .build/visual-review/render-preview .build/visual-review
 ```
@@ -101,8 +101,8 @@ Normal regression tests make no OpenAI calls. Live checks are opt-in and bill th
 
 ```sh
 xcrun swiftc -swift-version 6 -parse-as-library \
-  OnAir/Transcription/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
-  OnAir/Transcription/OpenAITranscriber.swift OnAir/Settings/DictationPreferences.swift \
+  Packages/OnAirCore/Sources/OnAirCore/Transcribing.swift OnAir/Transcription/APIKeyStore.swift \
+  Packages/OnAirCore/Sources/OnAirCore/OpenAITranscriber.swift Packages/OnAirCore/Sources/OnAirCore/DictationPreferences.swift \
   Tools/TranscriptionSmoke.swift \
   -o .build/transcription-smoke
 .build/transcription-smoke .build/benchmarks/synthetic-10.wav
@@ -153,3 +153,22 @@ explicitly asks to share them.
 ## Updates
 
 See [UPDATING.md](UPDATING.md) for the updater checks, actual Sparkle/signature fixtures, nonpublishing release validation, and the final signed replacement acceptance test. Keep desktop tests serial and the session unlocked; macOS can refuse native keyboard/menu dispatch while showing the lock screen.
+
+
+## iPhone beta checks
+
+Run `Tools/test-ios.sh` for the portable package and two simulator UI checks,
+and `python3 -m unittest discover -s Tools/IOSReleaseTests -v` for internal beta
+packaging safeguards. Set `IOS_SIMULATOR_UDID` to select an existing task device.
+The default script uses a dedicated `On Air CI` simulator. Tests use synthetic
+text/audio, never a real API key. The presentation fixture is a separate app,
+excluded from archives.
+
+The package exercises PCM conversion, bounded capture queues, discarded idle
+audio, session freshness, command cancellation/expiry, changed destinations,
+protected temporary results and one-use delivery claims. Simulator UI checks
+cover first-launch setup and the shared glow/waveform panel. They do not prove
+real keyboard installation, foreground/background microphone behaviour,
+Shortcuts cold starts, host-app insertion or energy use. Follow the physical
+acceptance matrix in [the iOS plan](IOS-BETA-PLAN.md) and record outcomes against
+the exact beta version/build. See [beta setup](IOS-BETA.md).

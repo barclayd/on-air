@@ -1,7 +1,7 @@
 import Foundation
 
 /// Formats explicit dotted number sequences only; this is not a general text rewrite.
-enum VersionNumberFormatter {
+public enum VersionNumberFormatter {
     private static let small: [String: Int] = [
         "zero": 0, "oh": 0, "one": 1, "two": 2, "three": 3, "four": 4,
         "five": 5, "six": 6, "seven": 7, "eight": 8, "nine": 9,
@@ -41,7 +41,7 @@ enum VersionNumberFormatter {
         return try! NSRegularExpression(pattern: pattern, options: .caseInsensitive)
     }()
 
-    static func format(_ text: String) -> String {
+    public static func format(_ text: String) -> String {
         let source = text as NSString
         var result = text
         // Reverse replacements keep the original UTF-16 ranges valid, including

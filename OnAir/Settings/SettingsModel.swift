@@ -1,3 +1,6 @@
+#if ON_AIR_PACKAGES
+import OnAirCore
+#endif
 import Foundation
 import Observation
 

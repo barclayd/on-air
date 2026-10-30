@@ -2,7 +2,7 @@
 
 A native macOS dictation app with the visual design from the supplied On Air film. Hold **fn / Globe**, speak, and release. A red glow responds to your voice; a blue waveform appears while OpenAI finishes the transcript, then the completed text is pasted into the original input field.
 
-An iPhone internal beta is planned. See the [iOS implementation plan](docs/IOS-BETA-PLAN.md) for the research, keyboard and Live Activity architecture, implementation sequence, and TestFlight delivery. No iOS build is available yet.
+The iOS 18+ internal beta includes a voice keyboard, Live Activity and bring-your-own OpenAI key setup. See [beta setup and current validation](docs/IOS-BETA.md) and the [approved implementation plan](docs/IOS-BETA-PLAN.md). Physical dictation acceptance is still in progress; this is not a public App Store release.
 
 Audio streams to `gpt-live-transcribe` while fn is held, using low delay, English, and the hint **ALM**. There is no separate AI rewrite step. Failed recordings can be retried with `gpt-transcribe`. Audio is held only in memory, never written to disk.
 

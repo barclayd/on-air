@@ -1,0 +1,80 @@
+name: Release On Air iOS Beta
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Unpublished beta version matching the source
+        required: true
+        default: '1.1.0'
+        type: string
+      upload:
+        description: Upload and assign to the configured internal TestFlight group
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-beta-distribution
+  cancel-in-progress: false
+
+jobs:
+  beta:
+    if: github.repository == 'barclayd/on-air'
+    runs-on: macos-26
+    environment: ios-beta
+    timeout-minutes: 60
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Check portable contracts and iOS distribution safeguards
+        run: |
+          swift test --package-path Packages/OnAirCore
+          python3 -m unittest discover -s Tools/IOSReleaseTests -v
+      - name: Archive and distribute internal beta
+        env:
+          BETA_VERSION: ${{ inputs.version }}
+          UPLOAD_BETA: ${{ inputs.upload }}
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_PASSWORD }}
+          IOS_APP_PROFILE_BASE64: ${{ secrets.IOS_APP_PROFILE_BASE64 }}
+          IOS_KEYBOARD_PROFILE_BASE64: ${{ secrets.IOS_KEYBOARD_PROFILE_BASE64 }}
+          IOS_ACTIVITY_PROFILE_BASE64: ${{ secrets.IOS_ACTIVITY_PROFILE_BASE64 }}
+          APP_STORE_CONNECT_KEY_P8_BASE64: ${{ secrets.APP_STORE_CONNECT_KEY_P8_BASE64 }}
+          APP_STORE_CONNECT_KEY_ID: ${{ secrets.APP_STORE_CONNECT_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+          APP_STORE_CONNECT_APP_ID: ${{ vars.APP_STORE_CONNECT_APP_ID }}
+          IOS_INTERNAL_GROUP_ID: ${{ vars.IOS_INTERNAL_GROUP_ID }}
+        run: |
+          # Distinct build on every rerun; leaves local development builds 1–100 available.
+          build_number=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          upload_arguments=()
+          if [[ "$UPLOAD_BETA" == true ]]; then upload_arguments+=(--upload); fi
+          python3 Tools/ios_beta.py --version "$BETA_VERSION" --build "$build_number" \
+            --output .build/ios-beta "${upload_arguments[@]}"
+      - name: Retain exact beta and provenance
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: ios-beta-${{ github.run_number }}-${{ github.run_attempt }}
+          path: |
+            .build/ios-beta/build.json
+            .build/ios-beta/export/*.ipa
+            .build/ios-beta/*.sha256
+            .build/ios-beta/logs/
+          if-no-files-found: ignore
+          retention-days: 14
+      - name: Remove signing material after interruption
+        if: always()
+        run: |
+          for signing_dir in "$RUNNER_TEMP"/on-air-ios-signing-*; do
+            [[ -d "$signing_dir" ]] || continue
+            security delete-keychain "$signing_dir/beta.keychain-db" 2>/dev/null || true
+            rm -rf "$signing_dir"
+          done
