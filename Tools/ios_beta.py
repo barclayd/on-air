@@ -47,6 +47,24 @@ def version_pair(version, build):
     return version, build
 
 
+def validate_icon(path):
+    data = Path(path).read_bytes()
+    # App Store icons must be 1024px RGB PNGs without an alpha channel. A copied
+    # Mac icon can render correctly on device yet still fail Apple's upload.
+    if (data[:16] != b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR'
+            or int.from_bytes(data[16:20], 'big') != 1024
+            or int.from_bytes(data[20:24], 'big') != 1024
+            or data[24:26] != bytes([8, 2])):
+        raise BetaError('iPhone icon must be a 1024px RGB PNG without alpha')
+    offset = 8
+    while offset + 12 <= len(data):
+        length = int.from_bytes(data[offset:offset + 4], 'big')
+        kind = data[offset + 4:offset + 8]
+        if kind == b'tRNS':
+            raise BetaError('iPhone icon must not contain PNG transparency')
+        offset += length + 12
+
+
 def validate_bundle(info, entitlements, version, build, *, distribution=False):
     identifier = info.get('CFBundleIdentifier')
     if identifier not in TARGETS:
@@ -215,6 +233,7 @@ class Connect:
 
 def release(arguments):
     version, build = version_pair(arguments.version, arguments.build)
+    validate_icon(ROOT / 'iOS/Resources/Assets.xcassets/AppIcon.appiconset/icon-1024.png')
     if run(['git', 'status', '--porcelain', '--untracked-files=no']).strip():
         raise BetaError('Commit tracked changes before building a distributable beta')
     commit = run(['git', 'rev-parse', 'HEAD']).decode().strip()
@@ -249,6 +268,7 @@ def release(arguments):
         manifest['archiveTargets'] = verify_app(app, version, build)
         run(['ditto', '-c', '-k', '--keepParent', archive, output / 'OnAirPhone.xcarchive.zip'])
         manifest['archiveSHA256'] = hashlib.file_digest((output / 'OnAirPhone.xcarchive.zip').open('rb'), 'sha256').hexdigest()
+        manifest['status'] = 'archived'; save()
         options = {'method': 'app-store-connect', 'destination': 'export', 'teamID': TEAM,
                    'signingStyle': 'automatic' if arguments.automatic else 'manual',
                    'testFlightInternalTestingOnly': True, 'manageAppVersionAndBuildNumber': False,

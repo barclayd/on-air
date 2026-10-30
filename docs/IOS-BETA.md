@@ -56,9 +56,12 @@ extensions with the shared App Group.
 The simulator checks establish presentation and setup behaviour, not working
 physical microphone capture or background keyboard dictation.
 
-Device installation, TestFlight delivery, twenty consecutive real dictations, audio
-routes/interruptions, energy use, lock handling and real host-app compatibility
-are still pending. Follow the acceptance matrix in [the approved plan](IOS-BETA-PLAN.md).
+The initial development beta was installed on the paired iPhone Duo. Exact
+build availability and TestFlight delivery status are recorded on the
+[implementation PR](https://github.com/barclayd/on-air/pull/30). Twenty consecutive
+real dictations, audio routes/interruptions, energy use, lock handling and real
+host-app compatibility still need acceptance checks. Follow the matrix in
+[the approved plan](IOS-BETA-PLAN.md).
 Do not describe this early simulator build as an installed, verified beta.
 
 The [iOS release instructions](RELEASING.md#internal-iphone-beta) describe local

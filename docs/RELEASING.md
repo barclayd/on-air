@@ -143,6 +143,13 @@ App Store submission. Local upload uses the existing Xcode account. Its final
 `uploaded` status means that processing and tester access still need checking
 in App Store Connect.
 
+If command-line export reports `No Accounts` while the account is available in
+Xcode, open the same `.xcarchive` in Xcode Organizer and choose **Distribute App
+→ TestFlight Internal Only**. Verify the bundle, version and build before upload,
+then record the actual uploaded build and its processing status. This fallback
+uses the existing signed-in account and does not require a new API credential.
+The release checks also reject transparent iOS app icons before archiving.
+
 After upload, follow that exact version/build through processing and compliance,
 then add it to an internal group containing Dan's existing eligible App Store
 Connect user. Confirm the group and build are available before giving TestFlight
