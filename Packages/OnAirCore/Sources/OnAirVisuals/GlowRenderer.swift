@@ -12,7 +12,9 @@ public enum GlowRenderer {
         let t = frame.reducedMotion ? 0 : frame.time
         let mix = frame.processing
         let level = frame.reducedMotion ? 0.22 : frame.level
-        let intensity = GlowIntensity(frame.intensity)
+        // Fix the blue endpoint before doing floating-point arithmetic: even
+        // red-only terms multiplied by zero can change rasterisation rounding.
+        let intensity = GlowIntensity(mix == 1 ? GlowIntensity.defaultValue : frame.intensity)
         let pulse = 0.5 + 0.5 * sin(t * 1.7)
         let recordingHeight = (0.09 + level * 0.16) * frame.presence
         // Keep the original blue endpoint independent of the recording setting,

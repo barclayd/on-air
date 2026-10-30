@@ -15,7 +15,6 @@
 		1C2F2DA8F7C159834F0FBB98 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 26416F7D97C8D31FE1BAB49F /* PrivacyInfo.xcprivacy */; };
 		1F9B1E059F7B44EFA3AEA0BF /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C8B586A21E4449DA1B3841C /* OnboardingView.swift */; };
 		2211A39BEDDBE449250DB4F2 /* OnAirIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = A73E4F39CBB0E27F296EBAEB /* OnAirIntents.swift */; };
-		23EAD5548FAE82469F7559E0 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 26416F7D97C8D31FE1BAB49F /* PrivacyInfo.xcprivacy */; };
 		24F7C8355E664CDFBF84A3AC /* GlowIntensitySlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15DB31666E1541568151BE33 /* GlowIntensitySlider.swift */; };
 		255B49C0932D68C684B73C92 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9FAA97675AA5B667FE3F1BBB /* Foundation.framework */; };
 		27BA80194E7A33C63B971AA3 /* SessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8460BE2EF3D6B6211CE365ED /* SessionCoordinator.swift */; };
@@ -64,6 +63,7 @@
 		D51AD03EFF2B51BA4685189C /* OnAirSession in Frameworks */ = {isa = PBXBuildFile; productRef = F21A275B74D4D9F024EC277C /* OnAirSession */; };
 		D6B1C2CC3B634BD317D71FC8 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 9FAA97675AA5B667FE3F1BBB /* Foundation.framework */; };
 		D6DC96F64D3AC01477D5D867 /* PhoneHome.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB8136EDC1645E06ADA5A37A /* PhoneHome.swift */; };
+		DD480260072A6791C65104A6 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 2ED0A09DA15CBBF509B09B3C /* PrivacyInfo.xcprivacy */; };
 		F211BB226BC75EE240723956 /* GlowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4402B5BD4CC5D5B68BA7DCA /* GlowView.swift */; };
 		F8680A6E6E468AAFA045F78C /* OnAirCore in Frameworks */ = {isa = PBXBuildFile; productRef = B8DB0CB88F3AA87672C60D1B /* OnAirCore */; };
 		F9A0089F2B28B4E47189A485 /* TranscriptInserter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B23193C8A39E474712586CA /* TranscriptInserter.swift */; };
@@ -128,6 +128,7 @@
 		1F0E9F3E43589FFB9A7A59B2 /* OnAirWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; name = OnAirWidgets.swift; path = Activities/OnAirWidgets.swift; sourceTree = "<group>"; };
 		2482C3273840F099B46986A5 /* OnAirInputFixture.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = OnAirInputFixture.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		26416F7D97C8D31FE1BAB49F /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = Resources/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		2ED0A09DA15CBBF509B09B3C /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; name = PrivacyInfo.xcprivacy; path = App/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		2F9A70548B564F5BB4289BA0 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsView.swift; path = Settings/SettingsView.swift; sourceTree = "<group>"; };
 		367BCB2866E441C4807D39D3 /* SettingsModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SettingsModel.swift; path = Settings/SettingsModel.swift; sourceTree = "<group>"; };
 		42B7AAD3EBD4CAC15D6A7DCF /* OnAirKeyboard.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OnAirKeyboard.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -283,6 +284,7 @@
 				A73E4F39CBB0E27F296EBAEB /* OnAirIntents.swift */,
 				C5CDCE31E9901C2D2342743E /* PhoneUITests.swift */,
 				0751CDA11B21A7C23B9F96C3 /* Assets.xcassets */,
+				2ED0A09DA15CBBF509B09B3C /* PrivacyInfo.xcprivacy */,
 			);
 			name = iOS;
 			path = iOS;
@@ -554,8 +556,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				23EAD5548FAE82469F7559E0 /* PrivacyInfo.xcprivacy in Resources */,
 				B7EF601758FDFBACB02001AD /* Assets.xcassets in Resources */,
+				DD480260072A6791C65104A6 /* PrivacyInfo.xcprivacy in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -693,7 +695,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = iOS/App/OnAir.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = "$(ON_AIR_IOS_SIGNING_STYLE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = R2GGK3VN2C;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -706,8 +708,10 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				ONLY_ACTIVE_ARCH = YES;
+				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(ON_AIR_APP_PROFILE)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -727,7 +731,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = iOS/Keyboard/OnAir.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = "$(ON_AIR_IOS_SIGNING_STYLE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = R2GGK3VN2C;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -740,8 +744,10 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				ONLY_ACTIVE_ARCH = YES;
+				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(ON_AIR_KEYBOARD_PROFILE)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -760,7 +766,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = iOS/Keyboard/OnAir.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = "$(ON_AIR_IOS_SIGNING_STYLE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = R2GGK3VN2C;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -773,8 +779,10 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				ONLY_ACTIVE_ARCH = NO;
+				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.keyboard;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(ON_AIR_KEYBOARD_PROFILE)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -806,9 +814,11 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.1.0;
+				ON_AIR_BUNDLE_IDENTIFIER = com.danbarclay.onair;
+				ON_AIR_PRODUCT_NAME = "On Air";
 				OTHER_SWIFT_FLAGS = "$(inherited) -D ON_AIR_PACKAGES";
-				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair;
-				PRODUCT_NAME = "On Air";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(ON_AIR_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(ON_AIR_PRODUCT_NAME)";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
@@ -822,7 +832,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = iOS/App/OnAir.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = "$(ON_AIR_IOS_SIGNING_STYLE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = R2GGK3VN2C;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -835,8 +845,10 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				ONLY_ACTIVE_ARCH = NO;
+				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(ON_AIR_APP_PROFILE)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -924,7 +936,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = iOS/Activities/OnAir.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = "$(ON_AIR_IOS_SIGNING_STYLE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = R2GGK3VN2C;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -937,8 +949,10 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				ONLY_ACTIVE_ARCH = YES;
+				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.activities;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(ON_AIR_ACTIVITY_PROFILE)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;
@@ -988,9 +1002,11 @@
 					"@executable_path/../Frameworks",
 				);
 				MARKETING_VERSION = 1.1.0;
+				ON_AIR_BUNDLE_IDENTIFIER = com.danbarclay.onair;
+				ON_AIR_PRODUCT_NAME = "On Air";
 				OTHER_SWIFT_FLAGS = "$(inherited) -D ON_AIR_PACKAGES";
-				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair;
-				PRODUCT_NAME = "On Air";
+				PRODUCT_BUNDLE_IDENTIFIER = "$(ON_AIR_BUNDLE_IDENTIFIER)";
+				PRODUCT_NAME = "$(ON_AIR_PRODUCT_NAME)";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_EMIT_LOC_STRINGS = NO;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
@@ -1037,7 +1053,7 @@
 				CLANG_ENABLE_OBJC_WEAK = NO;
 				CODE_SIGN_ENTITLEMENTS = iOS/Activities/OnAir.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
-				CODE_SIGN_STYLE = Automatic;
+				CODE_SIGN_STYLE = "$(ON_AIR_IOS_SIGNING_STYLE)";
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = R2GGK3VN2C;
 				GENERATE_INFOPLIST_FILE = NO;
@@ -1050,8 +1066,10 @@
 				);
 				MARKETING_VERSION = 1.1.0;
 				ONLY_ACTIVE_ARCH = NO;
+				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.activities;
 				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "$(ON_AIR_ACTIVITY_PROFILE)";
 				SDKROOT = iphoneos;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SUPPORTS_MACCATALYST = NO;

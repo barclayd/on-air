@@ -153,3 +153,22 @@ explicitly asks to share them.
 ## Updates
 
 See [UPDATING.md](UPDATING.md) for the updater checks, actual Sparkle/signature fixtures, nonpublishing release validation, and the final signed replacement acceptance test. Keep desktop tests serial and the session unlocked; macOS can refuse native keyboard/menu dispatch while showing the lock screen.
+
+
+## iPhone beta checks
+
+Run `Tools/test-ios.sh` for the portable package and two simulator UI checks,
+and `python3 -m unittest discover -s Tools/IOSReleaseTests -v` for internal beta
+packaging safeguards. Set `IOS_SIMULATOR_UDID` to select an existing task device.
+The default script uses a dedicated `On Air CI` simulator. Tests use synthetic
+text/audio, never a real API key. The presentation fixture is a separate app,
+excluded from archives.
+
+The package exercises PCM conversion, bounded capture queues, discarded idle
+audio, session freshness, command cancellation/expiry, changed destinations,
+protected temporary results and one-use delivery claims. Simulator UI checks
+cover first-launch setup and the shared glow/waveform panel. They do not prove
+real keyboard installation, foreground/background microphone behaviour,
+Shortcuts cold starts, host-app insertion or energy use. Follow the physical
+acceptance matrix in [the iOS plan](IOS-BETA-PLAN.md) and record outcomes against
+the exact beta version/build. See [beta setup](IOS-BETA.md).

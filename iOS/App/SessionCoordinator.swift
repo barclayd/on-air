@@ -21,6 +21,7 @@ final class SessionCoordinator: ObservableObject {
     private var activity: Activity<OnAirActivity>?
     private var activityTail: Task<Void, Never>?
     private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    private var finalisationID = UUID()
     private var retryPCM = Data()
     private var retryUntil: Date?
     private var captureRequestedAt: Date?
@@ -28,7 +29,10 @@ final class SessionCoordinator: ObservableObject {
     private var seenCommands = Set<UUID>()
     private var observers: [NSObjectProtocol] = []
     private var lastPublished = Date.distantPast
+    private var lastSuccessfulPublish = Date()
+    private var publicationPending = false
     private var lastPurge = Date.distantPast
+    private var lastActivityUpdate = Date.distantPast
 
     private init() {
         store = try? SessionStore.appGroup()
@@ -82,6 +86,9 @@ final class SessionCoordinator: ObservableObject {
         wantsReady = readyOnly || UserDefaults.standard.bool(forKey: "keepReady")
         publish()
         let allowed: Bool
+        if requiresActivity, AVAudioApplication.shared.recordPermission != .granted {
+            fail("Open On Air and allow microphone access before using this shortcut"); return
+        }
         if AVAudioApplication.shared.recordPermission == .undetermined {
             allowed = await AVAudioApplication.requestRecordPermission()
         } else { allowed = AVAudioApplication.shared.recordPermission == .granted }
@@ -132,9 +139,16 @@ final class SessionCoordinator: ObservableObject {
     }
     private func finalise(turnID: UUID, retry: Bool) {
         let sessionID = state.sessionID
+        finalisationID = UUID()
+        let finalisationID = finalisationID
         endBackgroundTask()
         backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Finish dictation") { [weak self] in
-            Task { @MainActor in self?.interrupt() }
+            Task { @MainActor in
+                guard let self, self.finalisationID == finalisationID,
+                      self.state.sessionID == sessionID, self.state.turnID == turnID,
+                      self.state.phase == .finishing else { return }
+                self.interrupt()
+            }
         }
         completion = Task { [weak self] in
             guard let self else { return }
@@ -241,24 +255,37 @@ final class SessionCoordinator: ObservableObject {
                     }
                 }
             }
-            if state.phase != .off && state.phase != .failed { publish(updateActivity: false) }
+            if publicationPending || (state.phase != .off && state.phase != .failed) { publish(updateActivity: false) }
         }
         if now.timeIntervalSince(lastPurge) > 1 {
             try? store?.purge(); transcript = store?.result(); lastPurge = now
         }
+        if activity != nil, now.timeIntervalSince(lastActivityUpdate) >= 15 { syncActivity() }
     }
     private func publish(updateActivity: Bool = true) {
         state.revision &+= 1; state.updatedAt = Date(); lastPublished = state.updatedAt
-        do { try store?.publish(state) } catch {
+        do {
+            try store?.publish(state)
+            lastSuccessfulPublish = Date(); publicationPending = false
+        } catch SessionStore.StoreError.busy {
+            publicationPending = true
+            if Date().timeIntervalSince(lastSuccessfulPublish) > 1 {
+                capture.stop(); transcriber.shutdown(); wantsReady = false
+                state.phase = .failed; state.issue = "Shared keyboard connection unavailable"
+                syncActivity()
+            }
+        } catch {
             // An extension must never act on an unpublishable recording state.
-            capture.stop(); state.phase = .failed; state.issue = "Shared keyboard connection unavailable"
+            capture.stop(); transcriber.shutdown(); wantsReady = false
+            state.phase = .failed; state.issue = "Shared keyboard connection unavailable"
+            syncActivity()
         }
         if updateActivity { syncActivity() }
     }
     private func activityContent() -> ActivityContent<OnAirActivity.ContentState> {
         ActivityContent(state: .init(phase: state.phase.rawValue, label: state.phase.label,
             turnID: state.turnID?.uuidString ?? "", startedAt: state.startedAt, readyUntil: state.readyUntil),
-            staleDate: state.phase == .recording ? state.startedAt?.addingTimeInterval(300) : state.readyUntil)
+            staleDate: Date().addingTimeInterval(30))
     }
     private func ensureActivity(required: Bool) throws {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
@@ -281,6 +308,7 @@ final class SessionCoordinator: ObservableObject {
     }
     private func syncActivity() {
         guard let current = activity else { return }
+        lastActivityUpdate = Date()
         let content = activityContent()
         let ends = state.phase == .off || state.phase == .failed
         let previous = activityTail

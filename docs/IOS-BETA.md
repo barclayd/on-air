@@ -30,13 +30,13 @@ for background starts. Their physical-device behaviour remains to be checked.
 ## Local checks
 
 ```sh
-swift test --package-path Packages/OnAirCore
+Tools/test-ios.sh
 Tools/test-core.sh
-xcodebuild -project OnAir.xcodeproj -scheme OnAirPhone \
-  -destination 'platform=iOS Simulator,name=iPhone Duo' test
+python3 -m unittest discover -s Tools/IOSReleaseTests -v
 ```
 
-Use a specific simulator UDID when more than one device has the same name.
+Set `IOS_SIMULATOR_UDID` to use a specific simulator; otherwise the script creates
+or reuses its isolated `On Air CI` simulator. The CI job runs these same checks.
 `OnAirInputFixture` is a separate simulator presentation/input fixture: its
 recording levels are synthetic, and it never uses the microphone or OpenAI.
 It is not embedded in the iPhone app or its archive.
@@ -47,15 +47,24 @@ sources directly. Credentials and OS input/audio ownership remain platform-speci
 
 ## Validation status
 
-The initial implementation has passed twelve portable transport/insertion tests,
-the existing Mac core checks, two iPhone simulator UI checks and a Mac Debug build.
+The implementation has passed sixteen portable transport, insertion and real PCM
+mailbox checks, the existing Mac core checks, two iPhone simulator UI checks and
+a Mac Debug build. The Mac E2E run covered 75 tests; a blue endpoint rounding
+regression found there was fixed and both visual checks rerun successfully with
+the original baselines. Development signing now succeeds for the app and both
+extensions with the shared App Group.
 The simulator checks establish presentation and setup behaviour, not working
 physical microphone capture or background keyboard dictation.
 
-Device signing, TestFlight delivery, twenty consecutive real dictations, audio
+Device installation, TestFlight delivery, twenty consecutive real dictations, audio
 routes/interruptions, energy use, lock handling and real host-app compatibility
 are still pending. Follow the acceptance matrix in [the approved plan](IOS-BETA-PLAN.md).
 Do not describe this early simulator build as an installed, verified beta.
+
+The [iOS release instructions](RELEASING.md#internal-iphone-beta) describe local
+account-based delivery and the separate internal-only CI workflow. Build
+provenance records the exact source, all three signed targets and the IPA hash;
+an upload alone does not establish internal tester access.
 
 Completed text uses a protected, backup-excluded App Group file for delivery.
 It expires after five minutes and is deleted when consumed or on the next

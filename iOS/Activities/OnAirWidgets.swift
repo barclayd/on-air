@@ -23,7 +23,7 @@ struct OnAirLiveActivity: Widget {
                 HStack {
                     Label("On Air", systemImage: "waveform").font(.headline)
                     Spacer()
-                    timer(context.state)
+                    if !context.isStale { timer(context.state) }
                 }
                 Text(context.isStale ? "Open On Air to check your session" : context.state.label)
                     .font(.subheadline)
@@ -35,7 +35,9 @@ struct OnAirLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.leading) {
                     Label("On Air", systemImage: "waveform").font(.headline).padding(.top, 8)
                 }
-                DynamicIslandExpandedRegion(.trailing) { timer(context.state).padding(.top, 8) }
+                DynamicIslandExpandedRegion(.trailing) {
+                    if !context.isStale { timer(context.state).padding(.top, 8) }
+                }
                 DynamicIslandExpandedRegion(.bottom) {
                     VStack(spacing: 12) {
                         Text(context.isStale ? "Open On Air to check your session" : context.state.label).font(.subheadline)
@@ -43,13 +45,16 @@ struct OnAirLiveActivity: Widget {
                     }.padding(.vertical, 8)
                 }
             } compactLeading: {
-                Image(systemName: "waveform").foregroundStyle(context.state.phase == "recording" ? .red : .white)
+                Image(systemName: context.isStale ? "exclamationmark.circle" : "waveform")
+                    .foregroundStyle(!context.isStale && context.state.phase == "recording" ? .red : .white)
             } compactTrailing: {
-                if context.state.phase == "recording", let date = context.state.startedAt {
+                if context.isStale { Text("Check").font(.caption) }
+                else if context.state.phase == "recording", let date = context.state.startedAt {
                     Text(date, style: .timer).monospacedDigit().frame(maxWidth: 44)
                 } else { Text(context.state.phase == "finishing" ? "…" : "On").font(.caption) }
             } minimal: {
-                Image(systemName: "waveform").foregroundStyle(context.state.phase == "recording" ? .red : .white)
+                Image(systemName: context.isStale ? "exclamationmark.circle" : "waveform")
+                    .foregroundStyle(!context.isStale && context.state.phase == "recording" ? .red : .white)
             }.widgetURL(URL(string: "onair://session"))
         }
     }
