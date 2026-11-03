@@ -34,7 +34,7 @@ struct PhoneHome: View {
                             Label(coordinator.state.phase.label, systemImage: "waveform")
                                 .font(.headline)
                             Text(coordinator.state.phase == .ready
-                                 ? "Return to your app, switch to the On Air keyboard and tap the microphone."
+                                 ? "Return to your app, switch to the On Air keyboard and start speaking."
                                  : "Start here, or enable a five-minute keyboard session to dictate across your apps.")
                                 .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
                             Button {
@@ -125,7 +125,7 @@ struct PhoneSetup: View {
                     Text("Then select On Air and enable Allow Full Access.")
                     Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
                 } header: { Text("2 · Enable the keyboard") } footer: {
-                    Text("Full Access lets the keyboard send recording commands to On Air. Ordinary typing works without it. Typed text and surrounding field content are never sent to OpenAI.")
+                    Text("Full Access lets the keyboard send recording commands to On Air. Switch to Apple’s keyboard for typing. Typed text and surrounding field content are never sent to OpenAI.")
                 }
                 Section {
                     Toggle("Stay ready after dictation", isOn: $keepReady)

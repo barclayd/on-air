@@ -8,18 +8,20 @@ iPhone's device-only Keychain. No key belongs in the repository or build setting
 
 1. Install the signed app, open Setup and verify your OpenAI key.
 2. In Settings → General → Keyboard → Keyboards, add On Air and enable Allow
-   Full Access. Basic typing works without Full Access; dictation commands need it.
+   Full Access. Use the globe button to return to your usual typing keyboard.
 3. In On Air, tap **Enable keyboard for 5 minutes**. Return to Notes or Messages,
-   select the On Air keyboard with the globe key, and tap **Dictate**.
+   select the On Air keyboard with the globe key, and start speaking.
 4. Finish with the tick. An unchanged, visible destination receives the final
-   transcript once. If the destination changed, use **Insert transcript** or the
+   transcript once, followed by a confirmation tick and a new listening turn. If the destination changed, use **Insert transcript** or the
    app's explicit **Copy transcript** instead.
-5. Use **Turn off** in the app or Live Activity to release the microphone.
+5. Switching keyboards or hiding On Air stops collecting dictation audio. Use **Turn off** in the app or Live Activity to release the microphone.
 
 Ready mode really keeps the microphone active. Audio outside a dictation is
 discarded, and the ready session expires after five minutes. A dictation is
-limited to five minutes. Cancellation, audio interruption, route changes and
-protected-data loss end capture; the app does not silently resume.
+limited to five minutes. The visible voice panel automatically starts the next turn after insertion or cancellation.
+A short keyboard visibility lease stops collection if the extension disappears.
+Audio interruptions, route changes and protected-data loss end the session;
+these require explicit reactivation in On Air.
 
 Cold keyboard activation currently uses an explicit visit to On Air followed
 by a manual return. No private host-app launcher or automatic arbitrary-app

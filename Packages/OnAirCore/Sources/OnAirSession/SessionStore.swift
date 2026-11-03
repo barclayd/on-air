@@ -27,6 +27,17 @@ public final class SessionStore: Sendable {
         return try SessionStore(directory: root.appendingPathComponent("Session", isDirectory: true))
     }
 
+    public func keyboardPresence() -> KeyboardPresence? { read("keyboard.json") }
+    public func publishKeyboardPresence(_ presence: KeyboardPresence) throws {
+        try locked { try write(presence, to: "keyboard.json") }
+    }
+    public func clearKeyboardPresence(destinationID: UUID) throws {
+        try locked {
+            guard keyboardPresence()?.destinationID == destinationID else { return }
+            try FileManager.default.removeItem(at: directory.appendingPathComponent("keyboard.json"))
+        }
+    }
+
     public func snapshot() -> SessionSnapshot? { read("state.json") }
     public func publish(_ snapshot: SessionSnapshot) throws {
         try locked { try write(snapshot, to: "state.json") }

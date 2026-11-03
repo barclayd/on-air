@@ -113,3 +113,17 @@ public struct InsertionGuard: Sendable {
         result.destinationID == destinationID && self.documentID == documentID && revision == capturedRevision
     }
 }
+
+/// A short lease ensures keyboard capture stops if the extension disappears or dies.
+/// Contains random identities only; no field contents or host-app information.
+public struct KeyboardPresence: Codable, Sendable {
+    public let destinationID: UUID
+    public let updatedAt: Date
+    public init(destinationID: UUID, now: Date = Date()) {
+        self.destinationID = destinationID; updatedAt = now
+    }
+    public func permits(_ destinationID: UUID, at now: Date = Date()) -> Bool {
+        self.destinationID == destinationID && now.timeIntervalSince(updatedAt) >= -1 &&
+        now < updatedAt.addingTimeInterval(0.8)
+    }
+}

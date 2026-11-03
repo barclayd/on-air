@@ -3,23 +3,6 @@ import SwiftUI
 import UIKit
 import OnAirSession
 
-@MainActor
-final class KeyboardModel: ObservableObject {
-    @Published var state = SessionSnapshot()
-    @Published var fullAccess = false
-    @Published var result: TranscriptRecord?
-    @Published var issue: String?
-    @Published var pending = false
-    @Published var needsGlobe = true
-    @Published var uncertainDelivery = false
-    var send: (SessionAction) -> Void = { _ in }
-    var type: (String) -> Void = { _ in }
-    var delete: () -> Void = {}
-    var nextKeyboard: () -> Void = {}
-    var insert: () -> Void = {}
-    var settings: () -> Void = {}
-}
-
 final class KeyboardViewController: UIInputViewController {
     private let model = KeyboardModel()
     private var store: SessionStore?
@@ -29,16 +12,13 @@ final class KeyboardViewController: UIInputViewController {
     private var insertion = InsertionGuard()
     private var inserting = false
     private var pendingCommand: SessionCommand?
+    private var resumeAfter = Date.distantPast
+    private var autoListen = true
     private var heightConstraint: NSLayoutConstraint?
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        model.type = { [weak self] text in
-            guard let self else { return }
-            self.insertion.invalidate(); self.textDocumentProxy.insertText(text)
-        }
-        model.delete = { [weak self] in self?.insertion.invalidate(); self?.textDocumentProxy.deleteBackward() }
-        model.nextKeyboard = { [weak self] in self?.insertion.invalidate(); self?.advanceToNextInputMode() }
+        model.nextKeyboard = { [weak self] in self?.leaveKeyboard(); self?.advanceToNextInputMode() }
         model.send = { [weak self] action in self?.send(action) }
         model.insert = { [weak self] in self?.deliver(explicit: true) }
         model.settings = { [weak self] in
@@ -60,6 +40,7 @@ final class KeyboardViewController: UIInputViewController {
     }
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
+        autoListen = true; model.inserted = false; resumeAfter = .distantPast
         visible = true; model.fullAccess = hasFullAccess; model.needsGlobe = needsInputModeSwitchKey
         if hasFullAccess { store = try? SessionStore.appGroup(); try? store?.purge() }
         poll?.cancel()
@@ -80,7 +61,8 @@ final class KeyboardViewController: UIInputViewController {
     }
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        visible = false; insertion.invalidate(); poll?.cancel(); poll = nil
+        leaveKeyboard()
+        visible = false; poll?.cancel(); poll = nil
         pendingCommand = nil; model.pending = false
     }
     override func textDidChange(_ textInput: (any UITextInput)?) {
@@ -94,7 +76,10 @@ final class KeyboardViewController: UIInputViewController {
     private func refresh() {
         guard visible else { return }
         model.fullAccess = hasFullAccess
-        guard hasFullAccess else { store = nil; model.result = nil; return }
+        guard hasFullAccess else {
+            store = nil; model.result = nil; model.state = SessionSnapshot()
+            model.inserted = false; insertion.invalidate(); return
+        }
         if store == nil { store = try? SessionStore.appGroup() }
         if let snapshot = store?.snapshot() {
             if snapshot.isLive() {
@@ -112,8 +97,11 @@ final class KeyboardViewController: UIInputViewController {
             }
         }
         if let pendingCommand, pendingCommand.expiresAt <= Date() {
-            self.pendingCommand = nil; model.pending = false; insertion.invalidate()
+            self.pendingCommand = nil; model.pending = false; insertion.invalidate(); autoListen = false
             model.issue = "Open On Air and enable a keyboard session, then return here."
+        }
+        if let destinationID = insertion.destinationID {
+            try? store?.publishKeyboardPresence(KeyboardPresence(destinationID: destinationID))
         }
         model.result = store?.result()
         if let result = model.result {
@@ -122,6 +110,21 @@ final class KeyboardViewController: UIInputViewController {
                 deliver(explicit: false)
             }
         }
+        if model.inserted, Date() >= resumeAfter { model.inserted = false }
+        if autoListen, !model.pending, model.result == nil, model.state.phase == .ready,
+           Date() >= resumeAfter {
+            model.inserted = false
+            send(.start)
+        }
+    }
+    private func leaveKeyboard() {
+        autoListen = false
+        if let destinationID = insertion.destinationID {
+            try? store?.clearKeyboardPresence(destinationID: destinationID)
+        }
+        if model.state.destinationID == insertion.destinationID, insertion.destinationID != nil,
+           model.state.phase == .recording || model.state.phase == .starting { send(.cancel) }
+        insertion.invalidate()
     }
     private func send(_ action: SessionAction) {
         guard hasFullAccess else { model.issue = "Enable Allow Full Access in Settings for dictation."; return }
@@ -132,11 +135,17 @@ final class KeyboardViewController: UIInputViewController {
             model.issue = "Open On Air, tap Enable keyboard for 5 minutes, then return here."; return
         }
         let destination = action == .start ? insertion.capture(documentID: textDocumentProxy.documentIdentifier) : nil
-        if action == .cancel || action == .turnOff { insertion.invalidate() }
+        if action == .turnOff { autoListen = false }
+        if action == .cancel { resumeAfter = Date().addingTimeInterval(0.3) }
+        if action == .cancel || action == .turnOff {
+            if let destinationID = insertion.destinationID { try? store.clearKeyboardPresence(destinationID: destinationID) }
+            insertion.invalidate()
+        }
         let command = SessionCommand(action: action, snapshot: state, destinationID: destination)
         do {
+            if let destination { try store.publishKeyboardPresence(KeyboardPresence(destinationID: destination)) }
             try store.enqueue(command); pendingCommand = command; model.pending = true; model.issue = nil
-        } catch { insertion.invalidate(); model.issue = "Could not contact On Air. Try again." }
+        } catch { insertion.invalidate(); autoListen = false; model.issue = "Could not contact On Air. Open On Air and try again." }
     }
     private func deliver(explicit: Bool) {
         guard visible, hasFullAccess, let store, let result = store.result() else { return }
@@ -148,7 +157,10 @@ final class KeyboardViewController: UIInputViewController {
             // No async suspension between the destination check, claim and insertion.
             inserting = true
             textDocumentProxy.insertText(claimed.text)
-            inserting = false; insertion.invalidate()
+            inserting = false
+            if let destinationID = insertion.destinationID { try? store.clearKeyboardPresence(destinationID: destinationID) }
+            insertion.invalidate()
+            model.inserted = true; resumeAfter = Date().addingTimeInterval(0.85)
             try store.consume(claimed.turnID); model.result = nil
             UIAccessibility.post(notification: .announcement, argument: "Transcript inserted")
         } catch {

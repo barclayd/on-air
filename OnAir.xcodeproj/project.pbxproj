@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AAAAAAAA11111111BBBBBBBB /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9432C3282FC23A261D564DCD /* KeyboardView.swift */; };
 		049AFA287A443703601E40EA /* OnAirCore in Frameworks */ = {isa = PBXBuildFile; productRef = D9D153077436776FD78F3DAA /* OnAirCore */; };
 		062F3F1DF086E64297211B4E /* DictationPanel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CF8A7E2CD6F53401391ED45 /* DictationPanel.swift */; };
 		0AB537A79003964F7B6FB860 /* KeyboardViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09C00F0D1322747720A64AC5 /* KeyboardViewController.swift */; };
@@ -614,6 +615,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				AF83CE6087928C674689B8E3 /* InputFixture.swift in Sources */,
+                AAAAAAAA11111111BBBBBBBB /* KeyboardView.swift in Sources */,
 				C54277AEDAA89B008350E7A4 /* DictationPanel.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -706,7 +708,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = YES;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios;
@@ -742,7 +744,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = YES;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.keyboard;
@@ -777,7 +779,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = NO;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.keyboard;
@@ -813,7 +815,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ON_AIR_BUNDLE_IDENTIFIER = com.danbarclay.onair;
 				ON_AIR_PRODUCT_NAME = "On Air";
 				OTHER_SWIFT_FLAGS = "$(inherited) -D ON_AIR_PACKAGES";
@@ -843,7 +845,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = NO;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios;
@@ -894,7 +896,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.fixture;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -947,7 +949,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = YES;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.activities;
@@ -1001,7 +1003,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ON_AIR_BUNDLE_IDENTIFIER = com.danbarclay.onair;
 				ON_AIR_PRODUCT_NAME = "On Air";
 				OTHER_SWIFT_FLAGS = "$(inherited) -D ON_AIR_PACKAGES";
@@ -1030,7 +1032,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.fixture;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1064,7 +1066,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.0;
+				MARKETING_VERSION = 1.1.1;
 				ONLY_ACTIVE_ARCH = NO;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.activities;

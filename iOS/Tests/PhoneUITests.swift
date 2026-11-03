@@ -22,7 +22,13 @@ final class PhoneUITests: XCTestCase {
         app.buttons["Finish dictation"].tap()
         XCTAssertTrue(app.staticTexts["Transcribing"].waitForExistence(timeout: 3))
         let finishing = XCTAttachment(screenshot: app.screenshot()); finishing.name = "Finishing preview"; finishing.lifetime = .keepAlways; add(finishing)
-        app.buttons["Cancel dictation"].tap()
+        XCTAssertFalse(app.buttons["Show keys"].exists)
+        XCTAssertFalse(app.buttons["space"].exists)
+        app.buttons["Simulate insertion"].tap()
+        XCTAssertTrue(app.staticTexts["Inserted"].waitForExistence(timeout: 3))
+        XCTAssertEqual(app.textFields["firstField"].value as? String, "A little less typing.")
+        XCTAssertTrue(app.staticTexts["Listening"].waitForExistence(timeout: 3))
+        app.buttons["Next keyboard"].tap()
         XCTAssertTrue(app.buttons["previewStart"].exists)
     }
 }

@@ -8,6 +8,20 @@ struct SessionTests {
     private func temporaryStore() throws -> SessionStore {
         try SessionStore(directory: FileManager.default.temporaryDirectory.appendingPathComponent("onair-test-\(UUID())"))
     }
+    @Test func keyboardCaptureRequiresFreshMatchingPresence() throws {
+        let store = try temporaryStore(); defer { try? FileManager.default.removeItem(at: store.directory) }
+        let destination = UUID()
+        let presence = KeyboardPresence(destinationID: destination, now: now)
+        try store.publishKeyboardPresence(presence)
+        #expect(store.keyboardPresence()?.permits(destination, at: now) == true)
+        #expect(!presence.permits(UUID(), at: now))
+        #expect(!presence.permits(destination, at: now.addingTimeInterval(0.8)))
+        #expect(!presence.permits(destination, at: now.addingTimeInterval(-2)))
+        try store.clearKeyboardPresence(destinationID: UUID())
+        #expect(store.keyboardPresence() != nil)
+        try store.clearKeyboardPresence(destinationID: destination)
+        #expect(store.keyboardPresence() == nil)
+    }
     @Test func freshHeartbeatDoesNotProveAudio() {
         var state = SessionSnapshot(now: now)
         state.phase = .recording

@@ -111,6 +111,7 @@ final class SessionCoordinator: ObservableObject {
     private func beginTurn(destinationID: UUID?) {
         guard state.phase == .ready, state.isLive(), capture.running,
               (state.readyUntil ?? .distantPast) > Date() else { return }
+        if let destinationID, store?.keyboardPresence()?.permits(destinationID) != true { return }
         retryPCM.removeAll(); retryUntil = nil
         state.turnID = UUID(); state.destinationID = destinationID
         state.phase = .starting; state.issue = nil; state.canRetry = false
@@ -224,6 +225,10 @@ final class SessionCoordinator: ObservableObject {
     }
     private func tick() {
         let now = Date()
+        if (state.phase == .starting || state.phase == .recording), let destinationID = state.destinationID,
+           store?.keyboardPresence()?.permits(destinationID, at: now) != true {
+            cancel(expectedTurn: state.turnID)
+        }
         if capture.running {
             ingest(capture.mailbox.take())
             if state.phase == .starting, let audioAt = state.audioAt,
