@@ -25,7 +25,7 @@ final class PhoneUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Show keys"].exists)
         XCTAssertFalse(app.buttons["space"].exists)
         app.buttons["Simulate insertion"].tap()
-        XCTAssertTrue(app.staticTexts["Inserted"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Inserted"].exists)
         XCTAssertEqual(app.textFields["firstField"].value as? String, "A little less typing.")
         XCTAssertTrue(app.staticTexts["Listening"].waitForExistence(timeout: 3))
         app.buttons["Next keyboard"].tap()
