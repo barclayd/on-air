@@ -121,6 +121,28 @@ struct FocusRecoveryIntegration {
             }
         }
 
+        try await command(editor, ["action": "focusButton"])
+        try await wait { NSWorkspace.shared.frontmostApplication?.processIdentifier == processes[0].processIdentifier }
+        try await Task.sleep(for: .milliseconds(150))
+        let diagnosticKey = "dictationDiagnosticsEnabled"
+        let previousDiagnostics = UserDefaults.standard.object(forKey: diagnosticKey)
+        defer {
+            if let previousDiagnostics { UserDefaults.standard.set(previousDiagnostics, forKey: diagnosticKey) }
+            else { UserDefaults.standard.removeObject(forKey: diagnosticKey) }
+        }
+        UserDefaults.standard.set(false, forKey: diagnosticKey)
+        try require(inserter.captureDestination() == nil, "An unfocused editor was guessed as the destination")
+        UserDefaults.standard.set(true, forKey: diagnosticKey)
+        try require(inserter.captureDestination() == nil, "Diagnostics changed the rejected capture result")
+        try await Task.sleep(for: .milliseconds(450))
+        try require(NSWorkspace.shared.frontmostApplication?.processIdentifier == processes[0].processIdentifier
+                    && state(editor)["responder"] as? String == "FocusFixtureButton",
+                    "Capture diagnostics moved focus away from the original button")
+        try require(state(editor)["first"] as? String == "" && state(editor)["second"] as? String == "",
+                    "Capture diagnostics changed field contents")
+        UserDefaults.standard.set(false, forKey: diagnosticKey)
+        print("PASS: rejected-focus diagnostics preserve capture decisions, focus and field contents")
+
         let normal = try await focusEditor(text: "Prefix: ")
         try require(await inserter.insert("normal insertion.", into: normal), "Normal paste was not posted: condition=\(normal.condition.rawValue), attention=\(normal.needsAttention), flags=\(CGEventSource.flagsState(.combinedSessionState).rawValue)")
         normal.stopMonitoring()
@@ -224,7 +246,7 @@ struct FocusRecoveryIntegration {
         print("PASS: a closed native window cannot receive a late transcript")
         try require(ClipboardSnapshot.capture(.general)?.items == clipboard.items, "Clipboard contents/formats were not preserved")
         print("PASS: general clipboard contents and formats preserved across the integration run")
-        try Data("12 native integration checks passed\n".utf8).write(to: root.appendingPathComponent("result.txt"))
+        try Data("13 native integration checks passed\n".utf8).write(to: root.appendingPathComponent("result.txt"))
     }
 
     @MainActor private static func command(_ directory: URL, _ values: [String: Any]) async throws {
@@ -259,6 +281,7 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
     private var window: NSWindow!
     private let first = NSTextView(frame: NSRect(x: 20, y: 145, width: 420, height: 65))
     private let second = NSTextView(frame: NSRect(x: 20, y: 45, width: 420, height: 65))
+    private let button = FocusFixtureButton(frame: NSRect(x: 20, y: 215, width: 420, height: 25))
     private var timer: Timer?
     private var commandID = ""
     private var outputRunning = false
@@ -272,6 +295,8 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
                           styleMask: [.titled, .closable], backing: .buffered, defer: false)
         window.title = "On Air — disposable focus test"
         window.isReleasedWhenClosed = false
+        button.title = "Private fixture label must never appear in destination logs"
+        window.contentView?.addSubview(button)
         for (index, view) in [first, second].enumerated() {
             view.isRichText = false
             view.font = .systemFont(ofSize: 16)
@@ -298,6 +323,10 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             try? FileManager.default.removeItem(at: request)
             switch value["action"] as? String {
+            case "focusButton":
+                window.makeKeyAndOrderFront(nil)
+                NSApp.activate(ignoringOtherApps: true)
+                window.makeFirstResponder(button)
             case "focus":
                 outputRunning = false
                 let field = value["field"] as? Int == 1 ? second : first
@@ -340,4 +369,8 @@ private final class FocusFixture: NSObject, NSApplicationDelegate {
             try? data.write(to: directory.appendingPathComponent("state.json"), options: .atomic)
         }
     }
+}
+
+private final class FocusFixtureButton: NSButton {
+    override var acceptsFirstResponder: Bool { true }
 }

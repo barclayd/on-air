@@ -8,10 +8,28 @@ import OSLog
 @MainActor
 enum DictationDiagnostics {
     private static let logger = Logger(subsystem: "com.danbarclay.onair", category: "Destination")
+    static var isEnabled: Bool { UserDefaults.standard.bool(forKey: "dictationDiagnosticsEnabled") }
     static func record(_ message: @autoclosure () -> String) {
-        guard UserDefaults.standard.bool(forKey: "dictationDiagnosticsEnabled") else { return }
+        guard isEnabled else { return }
         let entry = message()
         logger.info("\(entry, privacy: .public)")
+    }
+}
+
+/// Accessibility providers can return arbitrary strings. Log only known role
+/// names, never a provider's unexpected value or a localized role description.
+enum DestinationDiagnosticRole {
+    static func name(_ value: String?) -> String {
+        guard let value, !value.isEmpty else { return "unavailable" }
+        switch value {
+        case "AXApplication", "AXWindow", "AXSheet", "AXDialog", "AXGroup",
+             "AXWebArea", "AXScrollArea", "AXTextField", "AXTextArea",
+             "AXComboBox", "AXButton", "AXPopUpButton", "AXMenuButton",
+             "AXStaticText", "AXLink", "AXImage", "AXList", "AXTable",
+             "AXOutline", "AXRow", "AXCell", "AXToolbar", "AXTabGroup",
+             "AXMenuBar", "AXMenu", "AXMenuItem", "AXUnknown": return value
+        default: return "other"
+        }
     }
 }
 
@@ -174,15 +192,23 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
 
     static func capture() -> SystemDestinationAccess? {
         let reader = DestinationAXReader()
+        var capturedApplication: NSRunningApplication?
+        var capturedElement: AXUIElement?
+        var capturedRole: String?
         func rejected(_ reason: StaticString) -> SystemDestinationAccess? {
-            DictationDiagnostics.record("Destination capture failed: reason=\(reason) app=\(NSWorkspace.shared.frontmostApplication?.bundleIdentifier ?? "unknown") ax=\(reader.lastFailure ?? "none")")
+            CaptureFocusDiagnostics.recordFailure(reason, application: capturedApplication,
+                                                  element: capturedElement, role: capturedRole,
+                                                  axFailure: reader.lastFailure)
             return nil
         }
         guard AXIsProcessTrusted() else { return rejected("accessibility_not_trusted") }
         guard let app = NSWorkspace.shared.frontmostApplication else { return rejected("no_frontmost_application") }
+        capturedApplication = app
         guard app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return rejected("on_air_is_frontmost") }
         guard let field = reader.axElement(AXUIElementCreateSystemWide(), kAXFocusedUIElementAttribute) else { return rejected("focused_element_unreadable") }
+        capturedElement = field
         let role = reader.string(field, kAXRoleAttribute)
+        capturedRole = role
         guard [kAXTextFieldRole, kAXTextAreaRole, kAXComboBoxRole].contains(role) else { return rejected("unsupported_field_role") }
         guard reader.string(field, kAXSubroleAttribute) != kAXSecureTextFieldSubrole as String else { return rejected("secure_field") }
         var pid: pid_t = 0
@@ -339,6 +365,55 @@ final class SystemDestinationAccess: NSObject, DestinationAccess {
     }
 
     @objc private func focusChanged() { change?() }
+}
+
+/// Failed-capture probes only explain what the OS reports. They never choose a
+/// destination, change focus, enable accessibility, or read text/selection data.
+@MainActor
+private enum CaptureFocusDiagnostics {
+    static func recordFailure(_ reason: StaticString, application: NSRunningApplication?,
+                              element: AXUIElement?, role: String?, axFailure: String?) {
+        guard DictationDiagnostics.isEnabled else { return }
+        let id = UUID().uuidString
+        DictationDiagnostics.record("Destination capture failed: reason=\(reason) app=\(application?.bundleIdentifier ?? "unknown") ax=\(axFailure ?? "none") id=\(id) role=\(DestinationDiagnosticRole.name(role))")
+        // The original role/error above is the evidence at Fn-down. Later
+        // samples are explicitly separate: a provider may settle or focus move.
+        guard let application, let element, reason.description == "unsupported_field_role" else { return }
+        let started = ProcessInfo.processInfo.systemUptime
+        Task { @MainActor in
+            for delayed in [false, true] {
+                if delayed { try? await Task.sleep(for: .milliseconds(150)) }
+                guard DictationDiagnostics.isEnabled, AXIsProcessTrusted(), !application.isTerminated else { return }
+                sample(id: id, application: application, original: element, started: started)
+            }
+        }
+    }
+
+    private static func sample(id: String, application: NSRunningApplication,
+                               original: AXUIElement, started: TimeInterval) {
+        let reader = DestinationAXReader()
+        let app = AXUIElementCreateApplication(application.processIdentifier)
+        // Each optional diagnostic query is bounded. No system-wide timeout is
+        // changed, and no extra AX reads run synchronously before capture starts.
+        AXUIElementSetMessagingTimeout(app, 0.025)
+        AXUIElementSetMessagingTimeout(original, 0.025)
+        let focused = reader.axElement(app, kAXFocusedUIElementAttribute)
+        let focusedError = reader.lastFailure ?? "none"
+        let focusedRole = role(focused, reader: reader)
+        let roleError = focused == nil ? "not_read" : reader.lastFailure ?? "none"
+        let child = reader.axElement(original, kAXFocusedUIElementAttribute)
+        let childError = reader.lastFailure ?? "none"
+        let childRole = role(child, reader: reader)
+        let childRoleError = child == nil ? "not_read" : reader.lastFailure ?? "none"
+        let elapsed = Int((ProcessInfo.processInfo.systemUptime - started) * 1_000)
+        DictationDiagnostics.record("Capture focus sample: id=\(id) elapsedMs=\(elapsed) frontmostMatches=\(NSWorkspace.shared.frontmostApplication?.processIdentifier == application.processIdentifier) appFocusRole=\(focusedRole) appFocusMatchesOriginal=\(focused.map { CFEqual($0, original) } ?? false) appFocusAX=\(focusedError) roleAX=\(roleError) originalFocusedChildRole=\(childRole) childAX=\(childError) childRoleAX=\(childRoleError)")
+    }
+
+    private static func role(_ element: AXUIElement?, reader: DestinationAXReader) -> String {
+        guard let element else { return "unavailable" }
+        AXUIElementSetMessagingTimeout(element, 0.025)
+        return DestinationDiagnosticRole.name(reader.string(element, kAXRoleAttribute))
+    }
 }
 
 /// Records only the standard attribute name and error code, never its value.

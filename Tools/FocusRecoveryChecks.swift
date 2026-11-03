@@ -16,6 +16,15 @@ enum FocusRecoveryChecks {
         }
 
         func digest(_ text: String) -> SHA256.Digest { SHA256.hash(data: Data(text.utf8)) }
+        try expect(DestinationDiagnosticRole.name("AXWebArea") == "AXWebArea"
+                   && DestinationDiagnosticRole.name("AXTextArea") == "AXTextArea",
+                   "Diagnostics distinguish a web container from a text input")
+        try expect(DestinationDiagnosticRole.name(nil) == "unavailable"
+                   && DestinationDiagnosticRole.name("") == "unavailable",
+                   "Missing role information stays explicitly unavailable")
+        try expect(DestinationDiagnosticRole.name("Private user text\nAXTextArea") == "other"
+                   && DestinationDiagnosticRole.name("AXCustomPrivateText") == "other",
+                   "Unexpected provider role strings cannot leak content or inject log entries")
         var selectedTextReads = 0
         let caret = DestinationSelectionSnapshot(range: CFRange(location: 10, length: 0)) {
             selectedTextReads += 1; return digest("unused")
