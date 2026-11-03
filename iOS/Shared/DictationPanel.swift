@@ -24,7 +24,7 @@ struct DictationPanel: View {
                 }
                 Spacer()
                 Button("Done", systemImage: "checkmark", action: finish)
-                    .buttonStyle(.borderedProminent).tint(.primary)
+                    .buttonStyle(.borderedProminent)
                     .disabled(phase != .recording)
                     .accessibilityLabel("Finish dictation")
             }.controlSize(.large)
@@ -62,6 +62,5 @@ struct DictationPanel: View {
         }.padding(16)
             .frame(maxWidth: .infinity)
             .background(Color(uiColor: .systemBackground))
-            .foregroundStyle(.primary)
     }
 }

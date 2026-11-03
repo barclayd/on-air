@@ -46,6 +46,5 @@ struct KeyboardView: View {
             }
         }
         .background(Color(uiColor: .secondarySystemBackground))
-        .foregroundStyle(.primary)
     }
 }
