@@ -22,6 +22,16 @@ struct SessionTests {
         try store.clearKeyboardPresence(destinationID: destination)
         #expect(store.keyboardPresence() == nil)
     }
+    @Test func keyboardSelectionCanStartWithoutEnablingASession() {
+        var state = SessionSnapshot(now: now)
+        let denied = SessionCommand(action: .start, snapshot: state, now: now)
+        #expect(!denied.applies(to: state, at: now))
+        state.microphoneAuthorized = true
+        let start = SessionCommand(action: .start, snapshot: state, now: now)
+        #expect(start.applies(to: state, at: now))
+        state.commandGeneration = UUID()
+        #expect(!start.applies(to: state, at: now))
+    }
     @Test func freshHeartbeatDoesNotProveAudio() {
         var state = SessionSnapshot(now: now)
         state.phase = .recording
@@ -46,7 +56,7 @@ struct SessionTests {
         #expect(!finish.applies(to: state, at: now))
     }
     @Test func cancellationInvalidatesQueuedStartEvenWhenReadyAgain() {
-        var state = SessionSnapshot(now: now); state.phase = .ready
+        var state = SessionSnapshot(now: now); state.phase = .ready; state.microphoneAuthorized = true
         let start = SessionCommand(action: .start, snapshot: state, now: now)
         #expect(start.applies(to: state, at: now))
         state.commandGeneration = UUID()

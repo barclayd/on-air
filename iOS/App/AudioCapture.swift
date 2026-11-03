@@ -3,7 +3,15 @@ import Foundation
 import OnAirCore
 
 @MainActor
-final class AudioCapture {
+protocol AudioCapturing: AnyObject {
+    var mailbox: AudioMailbox { get }
+    var running: Bool { get }
+    func start(collecting: Bool) throws
+    func stop()
+}
+
+@MainActor
+final class AudioCapture: AudioCapturing {
     let mailbox = AudioMailbox()
     private var engine: AVAudioEngine?
     var running: Bool { engine?.isRunning == true }

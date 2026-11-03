@@ -18,6 +18,13 @@ print(sorted(runtimes, key=lambda r: tuple(map(int, r["version"].split("."))))[-
         simulator_id="$(xcrun simctl create 'On Air CI' com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro "$runtime_id")"
     fi
 fi
+# Unsigned simulator runners can reuse an installed test bundle after an incremental
+# build. Remove only this task's runner so the current test executable is installed.
+runner_bundle=com.danbarclay.onair.ios.uitests.xctrunner
+if xcrun simctl get_app_container "$simulator_id" "$runner_bundle" app >/dev/null 2>&1; then
+    xcrun simctl terminate "$simulator_id" "$runner_bundle" >/dev/null 2>&1 || true
+    xcrun simctl uninstall "$simulator_id" "$runner_bundle" >/dev/null
+fi
 xcodebuild -project OnAir.xcodeproj -scheme OnAirPhone \
     -destination "id=$simulator_id" -derivedDataPath .build/ios-checks/DerivedData \
     -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test \

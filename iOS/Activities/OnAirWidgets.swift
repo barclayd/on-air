@@ -70,12 +70,11 @@ struct OnAirLiveActivity: Widget {
             if context.state.phase == "recording" || context.state.phase == "finishing" {
                 Button(intent: intent("cancel", context)) { Label("Cancel", systemImage: "xmark") }
                 if context.state.phase == "recording" {
-                    Button(intent: intent("finish", context)) { Label("Finish", systemImage: "checkmark") }
+                    Button(intent: intent("finish", context)) { Label("Done", systemImage: "checkmark") }
                         .tint(.red)
                 }
             }
             Spacer(minLength: 0)
-            Button(intent: intent("off", context)) { Label("Turn off", systemImage: "power") }
         }.buttonStyle(.bordered)
     }
     private func intent(_ action: String, _ context: ActivityViewContext<OnAirActivity>) -> OnAirSessionAction {

@@ -9,23 +9,28 @@ iPhone's device-only Keychain. No key belongs in the repository or build setting
 1. Install the signed app and allow microphone access when iOS asks. Open Setup and verify your OpenAI key.
 2. In Settings → General → Keyboard → Keyboards, add On Air and enable Allow
    Full Access. Use the globe button to return to your usual typing keyboard.
-3. In On Air, turn **On Air** on. Return to Notes or Messages,
-   select the On Air keyboard with the globe key, and start speaking.
-4. Finish with the tick. An unchanged, visible destination receives the final
-   transcript once, followed by a confirmation tick and a new listening turn. If the destination changed, use **Insert transcript** or the
-   app's explicit **Copy transcript** instead.
-5. Switching keyboards or hiding On Air stops collecting dictation audio. Turn **On Air** off in the app when finished.
+3. Place the cursor in your app and select On Air from the keyboard list.
+   Choosing the keyboard starts one dictation; there is no enable/disable switch.
+4. Tap **Done** to stop audio capture immediately. The shared Mac animation
+   changes from the red listening glow to the blue processing wave. After
+   insertion, a tick appears and the keyboard returns to normal typing.
+   No further dictation starts until On Air is chosen again.
+5. Hiding or switching keyboards cancels capture. Audio interruption, route
+   changes and protected-data loss also stop the microphone.
 
-Ready mode really keeps the microphone active. Audio outside a dictation is
-discarded. The session stays on until turned off or interrupted. Each dictation
-is bounded to five minutes to limit its in-memory audio. The visible voice panel automatically starts the next turn after insertion.
-A short keyboard visibility lease stops collection if the extension disappears.
-Audio interruptions, route changes and protected-data loss end the session;
-these require explicit reactivation in On Air.
+Apple does not allow keyboard extensions to access the microphone directly.
+When the containing app is asleep, keyboard selection attempts a public SwiftUI
+URL handoff to `onair://keyboard`; On Air prepares microphone capture and the
+user returns using iOS's native back control. If iOS refuses the automatic URL
+open, the keyboard provides an **Open On Air** link. No private host-app launcher
+or arbitrary-app return is used. An unfinished handoff shuts itself down rather
+than leaving the microphone ready indefinitely. While the containing app is
+already running, selection can start dictation directly through the shared
+command channel. Cold handoff and background restart still require device checks.
+Each active dictation is bounded to limit its in-memory audio, and completed
+results and failed retry audio retain their existing private expiry limits.
 
-Cold keyboard activation currently uses an explicit visit to On Air followed
-by a manual return. No private host-app launcher or automatic arbitrary-app
-return is used. The Shortcuts/Action Button intent and Control Centre button
+The Shortcuts/Action Button intent and Control Centre button
 start or finish dictation through the containing app and require a Live Activity
 for background starts. Their physical-device behaviour remains to be checked.
 
@@ -49,7 +54,7 @@ sources directly. Credentials and OS input/audio ownership remain platform-speci
 
 ## Validation status
 
-The implementation has passed eighteen portable transport, insertion and real PCM
+The implementation has passed nineteen portable transport, insertion and real PCM
 mailbox checks, the existing Mac core checks, iPhone simulator UI checks and
 a Mac Debug build. The Mac E2E run covered 75 tests; a blue endpoint rounding
 regression found there was fixed and both visual checks rerun successfully with

@@ -7,6 +7,7 @@ struct PhoneHome: View {
     @ObservedObject var coordinator: SessionCoordinator
     @State private var showSetup = false
     @State private var practice = ""
+    @FocusState private var practiceFocused: Bool
     @State private var hasKey = false
     private var active: Bool { [.starting, .recording, .finishing].contains(coordinator.state.phase) }
 
@@ -14,21 +15,6 @@ struct PhoneHome: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Toggle("On Air", isOn: Binding(
-                        get: { coordinator.state.phase != .off && coordinator.state.phase != .failed },
-                        set: { on in
-                            if on { Task { await coordinator.activateReady() } }
-                            else { coordinator.turnOff() }
-                        }))
-                        .disabled(!hasKey || !coordinator.microphoneGranted)
-                        .accessibilityIdentifier("sessionToggle")
-                    Text(coordinator.state.phase == .off ? "Off" : coordinator.state.phase.label)
-                        .foregroundStyle(.secondary)
-                    if coordinator.state.phase == .ready {
-                        Text("Choose On Air from your keyboard list and speak.").foregroundStyle(.secondary)
-                    }
-                }
                 if !coordinator.microphoneGranted {
                     Section("Microphone") {
                         Text("Allow microphone access before using On Air.")
@@ -40,7 +26,10 @@ struct PhoneHome: View {
                         Button("Set up On Air") { showSetup = true }
                     }
                 }
-                if active {
+                if coordinator.state.phase == .ready {
+                    Section { Text("Use iOS’s back button to return to your app and dictate.").foregroundStyle(.secondary) }
+                }
+                if active && coordinator.state.destinationID == nil && !practiceFocused {
                     DictationPanel(phase: coordinator.state.phase, level: coordinator.state.level,
                         startedAt: coordinator.state.startedAt, cancel: { coordinator.cancel() }, finish: { coordinator.finish() })
                         .frame(height: 260).listRowInsets(EdgeInsets())
@@ -58,9 +47,10 @@ struct PhoneHome: View {
                     }
                 }
                 if coordinator.microphoneGranted && hasKey {
-                    Section("Try your keyboard") {
+                    Section {
+                        Text("Choose On Air from your keyboard list to dictate.").foregroundStyle(.secondary)
                         TextField("Tap here, then select On Air", text: $practice, axis: .vertical)
-                            .lineLimit(3...6).accessibilityIdentifier("practiceField")
+                            .lineLimit(3...6).focused($practiceFocused).accessibilityIdentifier("practiceField")
                     }
                 }
             }
@@ -128,7 +118,7 @@ struct PhoneSetup: View {
                         .lineLimit(3...6)
                         .onChange(of: notes) { _, value in if value.count > DictationPreferences.notesLimit { notes = String(value.prefix(DictationPreferences.notesLimit)) } }
                 } header: { Text("3 · Make it yours") } footer: {
-                    Text("Turn On Air on in the app to use voice dictation across your apps. Turn it off when you are finished. Audio between dictations is discarded.")
+                    Text("Choose On Air from your keyboard list to dictate. Done ends recording and inserts your words.")
                 }
                 Section("Shortcuts and Control Centre") {
                     Text("Add On Air’s Dictate control in Control Centre, or choose “Dictate with On Air” in Shortcuts or your Action Button settings. Tap again to finish. Allow Live Activities in Settings for background recording.")

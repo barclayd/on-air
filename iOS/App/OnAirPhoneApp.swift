@@ -6,7 +6,13 @@ struct OnAirPhoneApp: App {
     var body: some Scene {
         WindowGroup {
             PhoneHome(coordinator: coordinator)
-                .onOpenURL { _ in /* Opening the app never implicitly starts capture. */ }
+                .onOpenURL { url in
+                    guard url.scheme == "onair", url.host == "keyboard" else { return }
+                    Task {
+                        await coordinator.prepareMicrophone()
+                        await coordinator.activateReady()
+                    }
+                }
         }
     }
 }

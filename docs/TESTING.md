@@ -174,9 +174,15 @@ acceptance matrix in [the iOS plan](IOS-BETA-PLAN.md) and record outcomes agains
 the exact beta version/build. See [beta setup](IOS-BETA.md).
 
 The iPhone permission checks reset the simulator's microphone authorisation and
-exercise both Allow and Don't Allow before any API key is saved. Denial keeps the
-On Air switch disabled and hides the practice field. The audio tap is constructed
+exercise both Allow and Don't Allow before any API key is saved. Denial hides the practice field and prevents keyboard recording. The audio tap is constructed
 in the nonisolated mailbox and invoked on a background queue in regression
 coverage: an earlier device crash trapped in `AudioCapture.start(collecting:)`
 through `swift_task_checkIsolatedSwift` on AVFoundation's realtime messenger.
 Raw device crash reports remain private under `.build`.
+
+The single-turn regression runs the production iPhone session coordinator with
+synthetic PCM and a suspended transcriber. It verifies that Done stops capture
+before transcription resolves, that the completed session is off, and that
+capture is not restarted. The presentation fixture also ends after insertion
+instead of simulating another listening turn. The keyboard consumes one start
+per appearance and returns to the native typing keyboard after its confirmation.

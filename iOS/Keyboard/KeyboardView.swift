@@ -11,6 +11,7 @@ final class KeyboardModel: ObservableObject {
     @Published var pending = false
     @Published var uncertainDelivery = false
     @Published var inserted = false
+    @Published var needsHandoff = false
     var send: (SessionAction) -> Void = { _ in }
     var insert: () -> Void = {}
     var settings: () -> Void = {}
@@ -20,6 +21,7 @@ final class KeyboardModel: ObservableObject {
 struct KeyboardView: View {
     @ObservedObject var model: KeyboardModel
     var reduceMotionOverride: Bool? = nil
+    @Environment(\.openURL) private var openURL
     private var active: Bool { [.starting, .recording, .finishing].contains(model.state.phase) }
     var body: some View {
         VStack(spacing: 0) {
@@ -32,11 +34,12 @@ struct KeyboardView: View {
                     Text(model.fullAccess ? (model.state.microphoneAuthorized ? model.state.phase.label : "Open On Air") : "Allow Full Access")
                         .font(.title3.weight(.semibold))
                     Text(model.issue ?? model.state.issue ?? (model.fullAccess
-                         ? "Open On Air, allow microphone access and turn it on."
+                         ? "Open On Air to finish microphone setup, then return here."
                          : "Enable Allow Full Access for On Air in Keyboard Settings."))
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
                     if !model.fullAccess { Button("Open Settings", action: model.settings) }
+                    else if model.needsHandoff { Link("Open On Air", destination: URL(string: "onair://keyboard")!) }
                     if model.state.canRetry { Button("Retry transcription") { model.send(.retry) } }
                     if model.result != nil {
                         Button(model.uncertainDelivery ? "Insert again if missing" : "Insert transcript", action: model.insert)
@@ -45,6 +48,13 @@ struct KeyboardView: View {
                 }.padding(20).frame(maxWidth: .infinity)
             }
         }
-        .background(Color(uiColor: .secondarySystemBackground))
+        .background(Color(uiColor: .systemBackground))
+        .onChange(of: model.needsHandoff) { _, needed in
+            if needed {
+                openURL(URL(string: "onair://keyboard")!) { accepted in
+                    if !accepted { model.issue = "Open On Air once to prepare your microphone." }
+                }
+            }
+        }
     }
 }

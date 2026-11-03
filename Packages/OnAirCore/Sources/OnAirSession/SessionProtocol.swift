@@ -73,7 +73,7 @@ public struct SessionCommand: Codable, Sendable {
               createdAt <= now.addingTimeInterval(1), expiresAt > now,
               expiresAt.timeIntervalSince(createdAt) <= 10 else { return false }
         switch action {
-        case .start: return state.phase == .ready && turnID == state.turnID
+        case .start: return (state.phase == .ready || state.phase == .off) && state.microphoneAuthorized && turnID == state.turnID
         case .finish: return turnID != nil && turnID == state.turnID && state.phase == .recording
         case .cancel: return turnID != nil && turnID == state.turnID
         case .turnOff: return turnID == state.turnID

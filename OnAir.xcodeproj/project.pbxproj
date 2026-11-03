@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+        AAAAAAAABBBBBBBB00000003 /* OnAirActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9E2C42B32FF56A79251F6424 /* OnAirActivity.swift */; };
+        AAAAAAAABBBBBBBB00000002 /* IPhoneKeychain.swift in Sources */ = {isa = PBXBuildFile; fileRef = 116C2AA5920D7D7C021ACC20 /* IPhoneKeychain.swift */; };
+        AAAAAAAABBBBBBBB00000001 /* AudioCapture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 504AA1C6D1C1703892EC4D4A /* AudioCapture.swift */; };
+        AAAAAAAABBBBBBBB00000000 /* SessionCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8460BE2EF3D6B6211CE365ED /* SessionCoordinator.swift */; };
         AAAAAAAA22222222BBBBBBBB /* OnAirCore in Frameworks */ = {isa = PBXBuildFile; productRef = B8DB0CB88F3AA87672C60D1B /* OnAirCore */; };
         AAAAAAAA11111111BBBBBBBB /* KeyboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9432C3282FC23A261D564DCD /* KeyboardView.swift */; };
 		049AFA287A443703601E40EA /* OnAirCore in Frameworks */ = {isa = PBXBuildFile; productRef = D9D153077436776FD78F3DAA /* OnAirCore */; };
@@ -618,6 +622,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				AF83CE6087928C674689B8E3 /* InputFixture.swift in Sources */,
+                AAAAAAAABBBBBBBB00000000 /* SessionCoordinator.swift in Sources */,
+                AAAAAAAABBBBBBBB00000001 /* AudioCapture.swift in Sources */,
+                AAAAAAAABBBBBBBB00000002 /* IPhoneKeychain.swift in Sources */,
+                AAAAAAAABBBBBBBB00000003 /* OnAirActivity.swift in Sources */,
                 AAAAAAAA11111111BBBBBBBB /* KeyboardView.swift in Sources */,
 				C54277AEDAA89B008350E7A4 /* DictationPanel.swift in Sources */,
 			);
@@ -711,7 +719,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = YES;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios;
@@ -747,7 +755,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = YES;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.keyboard;
@@ -782,7 +790,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = NO;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.keyboard;
@@ -818,7 +826,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ON_AIR_BUNDLE_IDENTIFIER = com.danbarclay.onair;
 				ON_AIR_PRODUCT_NAME = "On Air";
 				OTHER_SWIFT_FLAGS = "$(inherited) -D ON_AIR_PACKAGES";
@@ -848,7 +856,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = NO;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios;
@@ -899,7 +907,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.fixture;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -952,7 +960,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = YES;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.activities;
@@ -1006,7 +1014,7 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ON_AIR_BUNDLE_IDENTIFIER = com.danbarclay.onair;
 				ON_AIR_PRODUCT_NAME = "On Air";
 				OTHER_SWIFT_FLAGS = "$(inherited) -D ON_AIR_PACKAGES";
@@ -1035,7 +1043,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = NO;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.fixture;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -1069,7 +1077,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 1.1.2;
+				MARKETING_VERSION = 1.1.3;
 				ONLY_ACTIVE_ARCH = NO;
 				ON_AIR_IOS_SIGNING_STYLE = Automatic;
 				PRODUCT_BUNDLE_IDENTIFIER = com.danbarclay.onair.ios.activities;
