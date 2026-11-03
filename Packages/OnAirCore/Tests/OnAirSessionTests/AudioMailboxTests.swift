@@ -13,6 +13,26 @@ struct AudioMailboxTests {
         for i in 0..<4_800 { buffer.floatChannelData![0][i] = Float(sin(Double(i) / 48_000 * 440 * 2 * .pi) * 0.2) }
         return (buffer, converter, output)
     }
+    private struct TapInvocation: @unchecked Sendable {
+        let tap: AVAudioNodeTapBlock
+        let buffer: AVAudioPCMBuffer
+    }
+    @Test @MainActor func audioTapRunsOnAVFoundationsBackgroundQueue() async throws {
+        let (buffer, converter, output) = try buffers()
+        let mailbox = AudioMailbox(); mailbox.gate(true)
+        let callback = TapInvocation(tap: mailbox.makeTap(converter: converter, output: output), buffer: buffer)
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global().async {
+                #expect(!Thread.isMainThread)
+                callback.tap(callback.buffer, AVAudioTime(sampleTime: 0, atRate: 48_000))
+                continuation.resume()
+            }
+        }
+        let batch = mailbox.take()
+        #expect(batch.audioAt != nil)
+        #expect(!batch.pcm.isEmpty)
+        #expect(!batch.overflow)
+    }
     @Test func readyAudioNeverEntersTheMailbox() throws {
         let (buffer, converter, output) = try buffers(); let mailbox = AudioMailbox()
         mailbox.receive(buffer, converter: converter, output: output)

@@ -6,82 +6,72 @@ import OnAirSession
 struct PhoneHome: View {
     @ObservedObject var coordinator: SessionCoordinator
     @State private var showSetup = false
-    @AppStorage("keepReady") private var keepReady = false
     @State private var practice = ""
     @State private var hasKey = false
     private var active: Bool { [.starting, .recording, .finishing].contains(coordinator.state.phase) }
 
+    @Environment(\.scenePhase) private var scenePhase
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    HStack(spacing: 8) {
-                        Circle().fill(coordinator.state.phase == .recording ? .red : .secondary).frame(width: 7, height: 7)
-                        Text("IPHONE BETA").font(.caption.weight(.semibold)).tracking(2).foregroundStyle(.secondary)
+            Form {
+                Section {
+                    Toggle("On Air", isOn: Binding(
+                        get: { coordinator.state.phase != .off && coordinator.state.phase != .failed },
+                        set: { on in
+                            if on { Task { await coordinator.activateReady() } }
+                            else { coordinator.turnOff() }
+                        }))
+                        .disabled(!hasKey || !coordinator.microphoneGranted)
+                        .accessibilityIdentifier("sessionToggle")
+                    Text(coordinator.state.phase == .off ? "Off" : coordinator.state.phase.label)
+                        .foregroundStyle(.secondary)
+                    if coordinator.state.phase == .ready {
+                        Text("Choose On Air from your keyboard list and speak.").foregroundStyle(.secondary)
                     }
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("A little less typing.").font(.system(size: 37, weight: .semibold, design: .serif))
-                        Text("Your voice, wherever you write.")
-                            .font(.title3).foregroundStyle(.secondary)
+                }
+                if !coordinator.microphoneGranted {
+                    Section("Microphone") {
+                        Text("Allow microphone access before using On Air.")
+                        Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
                     }
-                    if active {
-                        DictationPanel(phase: coordinator.state.phase, level: coordinator.state.level,
-                            startedAt: coordinator.state.startedAt,
-                            cancel: { coordinator.cancel() }, finish: { coordinator.finish() })
-                            .frame(height: 300).clipShape(RoundedRectangle(cornerRadius: 26))
-                    } else {
-                        VStack(alignment: .leading, spacing: 18) {
-                            Label(coordinator.state.phase.label, systemImage: "waveform")
-                                .font(.headline)
-                            Text(coordinator.state.phase == .ready
-                                 ? "Return to your app, switch to the On Air keyboard and start speaking."
-                                 : "Start here, or enable a five-minute keyboard session to dictate across your apps.")
-                                .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-                            Button {
-                                if hasKey { Task { await coordinator.startDictation() } } else { showSetup = true }
-                            } label: {
-                                Label(hasKey ? "Start dictation" : "Set up On Air", systemImage: "mic.fill")
-                                    .frame(maxWidth: .infinity).padding(.vertical, 8)
-                            }.buttonStyle(.borderedProminent).tint(.primary)
-                            if hasKey {
-                                if coordinator.state.phase == .ready {
-                                    Button("Turn microphone off", role: .destructive) { coordinator.turnOff() }
-                                } else {
-                                    Button("Enable keyboard for 5 minutes") { Task { await coordinator.activateReady() } }
-                                        .accessibilityHint("Keeps the microphone active and discards audio between dictations")
-                                }
-                            }
-                        }.padding(22).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 26))
+                }
+                if !hasKey {
+                    Section {
+                        Button("Set up On Air") { showSetup = true }
                     }
-                    if let issue = coordinator.state.issue {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Label(issue, systemImage: "exclamationmark.circle").foregroundStyle(.secondary)
-                            if coordinator.state.canRetry { Button("Retry transcription") { coordinator.retry() } }
-                        }.font(.subheadline)
+                }
+                if active {
+                    DictationPanel(phase: coordinator.state.phase, level: coordinator.state.level,
+                        startedAt: coordinator.state.startedAt, cancel: { coordinator.cancel() }, finish: { coordinator.finish() })
+                        .frame(height: 260).listRowInsets(EdgeInsets())
+                }
+                if let issue = coordinator.state.issue {
+                    Section {
+                        Text(issue).foregroundStyle(.secondary)
+                        if coordinator.state.canRetry { Button("Retry transcription") { coordinator.retry() } }
                     }
-                    if let result = coordinator.transcript {
-                        VStack(alignment: .leading, spacing: 12) {
-                            Text("Your words").font(.headline)
-                            Text(result.text).textSelection(.enabled)
-                            Button("Copy transcript", systemImage: "doc.on.doc") { coordinator.copyTranscript() }
-                            Text("Available for five minutes. Copy only when you want it on your clipboard.")
-                                .font(.caption).foregroundStyle(.secondary)
-                        }.padding(20).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 20))
+                }
+                if let result = coordinator.transcript {
+                    Section("Transcript") {
+                        Text(result.text).textSelection(.enabled)
+                        Button("Copy transcript", systemImage: "doc.on.doc") { coordinator.copyTranscript() }
                     }
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Try your keyboard").font(.headline)
-                        TextField("Tap here, then hold the globe key", text: $practice, axis: .vertical)
-                            .lineLimit(3...6).padding(16).background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 16))
-                            .accessibilityIdentifier("practiceField")
-                        Text("Choose On Air from the keyboard list. Secure fields and some apps use Apple’s keyboard.")
-                            .font(.caption).foregroundStyle(.secondary)
+                }
+                if coordinator.microphoneGranted && hasKey {
+                    Section("Try your keyboard") {
+                        TextField("Tap here, then select On Air", text: $practice, axis: .vertical)
+                            .lineLimit(3...6).accessibilityIdentifier("practiceField")
                     }
-                }.padding(24)
+                }
             }
             .navigationTitle("On Air").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Setup", systemImage: "slider.horizontal.3") { showSetup = true } } }
             .sheet(isPresented: $showSetup, onDismiss: refreshKey) { PhoneSetup(coordinator: coordinator) }
             .onAppear(perform: refreshKey)
+            .task { await coordinator.prepareMicrophone() }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { coordinator.refreshMicrophonePermission(); refreshKey() }
+            }
         }
     }
     private func refreshKey() { hasKey = (try? IPhoneKeychain.load()) != nil }
@@ -90,7 +80,6 @@ struct PhoneHome: View {
 struct PhoneSetup: View {
     @ObservedObject var coordinator: SessionCoordinator
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("keepReady") private var keepReady = false
     @AppStorage(DictationPreferences.notesKey) private var notes = ""
     @State private var key = ""
     @State private var saved = false
@@ -102,6 +91,13 @@ struct PhoneSetup: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section("Microphone") {
+                    Label(coordinator.microphoneGranted ? "Allowed" : "Access required",
+                        systemImage: coordinator.microphoneGranted ? "checkmark.circle" : "mic")
+                    if !coordinator.microphoneGranted {
+                        Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                    }
+                }
                 Section {
                     SecureField(saved ? "Replace OpenAI key" : "OpenAI API key", text: $key)
                         .textInputAutocapitalization(.never).autocorrectionDisabled()
@@ -128,12 +124,11 @@ struct PhoneSetup: View {
                     Text("Full Access lets the keyboard send recording commands to On Air. Switch to Apple’s keyboard for typing. Typed text and surrounding field content are never sent to OpenAI.")
                 }
                 Section {
-                    Toggle("Stay ready after dictation", isOn: $keepReady)
                     TextField("Names, vocabulary and spelling preferences", text: $notes, axis: .vertical)
                         .lineLimit(3...6)
                         .onChange(of: notes) { _, value in if value.count > DictationPreferences.notesLimit { notes = String(value.prefix(DictationPreferences.notesLimit)) } }
                 } header: { Text("3 · Make it yours") } footer: {
-                    Text("Ready mode keeps the microphone active for up to five minutes. Audio between dictations is discarded. Turn it off in On Air or its Live Activity. Changes apply to the next session.")
+                    Text("Turn On Air on in the app to use voice dictation across your apps. Turn it off when you are finished. Audio between dictations is discarded.")
                 }
                 Section("Shortcuts and Control Centre") {
                     Text("Add On Air’s Dictate control in Control Centre, or choose “Dictate with On Air” in Shortcuts or your Action Button settings. Tap again to finish. Allow Live Activities in Settings for background recording.")

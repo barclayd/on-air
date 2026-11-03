@@ -24,9 +24,8 @@ final class AudioCapture {
                   let converter = AVAudioConverter(from: format, to: output) else { throw CaptureError.unavailable }
             let mailbox = mailbox
             mailbox.gate(collecting)
-            input.installTap(onBus: 0, bufferSize: 1024, format: format) { buffer, _ in
-                mailbox.receive(buffer, converter: converter, output: output)
-            }
+            input.installTap(onBus: 0, bufferSize: 1024, format: format,
+                block: mailbox.makeTap(converter: converter, output: output))
             engine.prepare(); try engine.start(); self.engine = engine
         } catch { try? session.setActive(false); throw error }
     }

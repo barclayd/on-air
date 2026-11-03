@@ -1,4 +1,6 @@
 import SwiftUI
+import AVFAudio
+import OnAirCore
 import OnAirSession
 
 /// Separate simulator-only fixture; never embedded in the distributable app.
@@ -7,8 +9,14 @@ struct InputFixture: App {
     var body: some Scene { WindowGroup { FixtureScreen() } }
 }
 
+private struct SyntheticAudioTap: @unchecked Sendable {
+    let callback: AVAudioNodeTapBlock
+    let buffer: AVAudioPCMBuffer
+}
+
 struct FixtureScreen: View {
     @StateObject private var keyboard = KeyboardModel()
+    @State private var audioStatus: String?
     @State private var first = ""
     @State private var second = ""
     @State private var phase = SessionPhase.off
@@ -18,6 +26,7 @@ struct FixtureScreen: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             Text("On Air").font(.largeTitle.weight(.semibold))
+            if let audioStatus { Text(audioStatus) }
             Text("SIMULATOR PREVIEW · SYNTHETIC AUDIO").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
             TextField("First destination", text: $first).textFieldStyle(.roundedBorder).accessibilityIdentifier("firstField")
             TextField("Second destination", text: $second).textFieldStyle(.roundedBorder).accessibilityIdentifier("secondField")
@@ -43,6 +52,7 @@ struct FixtureScreen: View {
                     }
                 }
             }
+            if phase != .off { Button("Close preview") { phase = .off } }
             Text("Preview only. No microphone, API key or network is used.")
                 .font(.footnote).foregroundStyle(.secondary)
         }.padding(24)
@@ -50,7 +60,24 @@ struct FixtureScreen: View {
                 keyboard.state.phase = value; keyboard.state.startedAt = startedAt
             }
             .task {
+                if ProcessInfo.processInfo.arguments.contains("--check-audio-callback") {
+                    let input = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
+                    let output = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24_000, channels: 1, interleaved: false)!
+                    let buffer = AVAudioPCMBuffer(pcmFormat: input, frameCapacity: 4_800)!
+                    buffer.frameLength = 4_800
+                    for i in 0..<4_800 { buffer.floatChannelData![0][i] = 0.1 }
+                    let mailbox = AudioMailbox(); mailbox.gate(true)
+                    let invocation = SyntheticAudioTap(callback: mailbox.makeTap(converter: AVAudioConverter(from: input, to: output)!, output: output), buffer: buffer)
+                    await withCheckedContinuation { continuation in
+                        DispatchQueue.global().async {
+                            invocation.callback(invocation.buffer, AVAudioTime(sampleTime: 0, atRate: 48_000))
+                            continuation.resume()
+                        }
+                    }
+                    audioStatus = mailbox.take().pcm.isEmpty ? "Audio callback failed" : "Audio callback passed"
+                }
                 keyboard.fullAccess = true
+                keyboard.state.microphoneAuthorized = true
                 keyboard.send = { action in
                     switch action {
                     case .finish: phase = .finishing
@@ -58,7 +85,7 @@ struct FixtureScreen: View {
                     default: break
                     }
                 }
-                keyboard.nextKeyboard = { phase = .off }
+
 
                 while !Task.isCancelled {
                     level = 0.2 + 0.5 * abs(sin(Date().timeIntervalSince1970 * 2.4))

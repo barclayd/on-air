@@ -6,19 +6,19 @@ iPhone's device-only Keychain. No key belongs in the repository or build setting
 
 ## Trying the beta
 
-1. Install the signed app, open Setup and verify your OpenAI key.
+1. Install the signed app and allow microphone access when iOS asks. Open Setup and verify your OpenAI key.
 2. In Settings → General → Keyboard → Keyboards, add On Air and enable Allow
    Full Access. Use the globe button to return to your usual typing keyboard.
-3. In On Air, tap **Enable keyboard for 5 minutes**. Return to Notes or Messages,
+3. In On Air, turn **On Air** on. Return to Notes or Messages,
    select the On Air keyboard with the globe key, and start speaking.
 4. Finish with the tick. An unchanged, visible destination receives the final
    transcript once, followed by a confirmation tick and a new listening turn. If the destination changed, use **Insert transcript** or the
    app's explicit **Copy transcript** instead.
-5. Switching keyboards or hiding On Air stops collecting dictation audio. Use **Turn off** in the app or Live Activity to release the microphone.
+5. Switching keyboards or hiding On Air stops collecting dictation audio. Turn **On Air** off in the app when finished.
 
 Ready mode really keeps the microphone active. Audio outside a dictation is
-discarded, and the ready session expires after five minutes. A dictation is
-limited to five minutes. The visible voice panel automatically starts the next turn after insertion or cancellation.
+discarded. The session stays on until turned off or interrupted. Each dictation
+is bounded to five minutes to limit its in-memory audio. The visible voice panel automatically starts the next turn after insertion.
 A short keyboard visibility lease stops collection if the extension disappears.
 Audio interruptions, route changes and protected-data loss end the session;
 these require explicit reactivation in On Air.
@@ -49,8 +49,8 @@ sources directly. Credentials and OS input/audio ownership remain platform-speci
 
 ## Validation status
 
-The implementation has passed sixteen portable transport, insertion and real PCM
-mailbox checks, the existing Mac core checks, two iPhone simulator UI checks and
+The implementation has passed eighteen portable transport, insertion and real PCM
+mailbox checks, the existing Mac core checks, iPhone simulator UI checks and
 a Mac Debug build. The Mac E2E run covered 75 tests; a blue endpoint rounding
 regression found there was fixed and both visual checks rerun successfully with
 the original baselines. Development signing now succeeds for the app and both

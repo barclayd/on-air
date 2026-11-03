@@ -11,6 +11,8 @@ import OnAirSession
 final class SessionCoordinator: ObservableObject {
     static let shared = SessionCoordinator()
     @Published private(set) var state = SessionSnapshot()
+    @Published private(set) var microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
+    private var requestingPermission = false
     @Published private(set) var transcript: TranscriptRecord?
     private let capture = AudioCapture()
     private let store: SessionStore?
@@ -66,6 +68,22 @@ final class SessionCoordinator: ObservableObject {
         }
     }
 
+    /// Permission is requested in the foreground setup flow, independently of API credentials.
+    func prepareMicrophone() async {
+        guard !requestingPermission else { return }
+        requestingPermission = true
+        defer { requestingPermission = false }
+        if AVAudioApplication.shared.recordPermission == .undetermined {
+            _ = await AVAudioApplication.requestRecordPermission()
+        }
+        refreshMicrophonePermission()
+    }
+    func refreshMicrophonePermission() {
+        microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
+        if !microphoneGranted, state.phase != .off { turnOff() }
+        publish()
+    }
+
     func activateReady() async {
         guard state.phase == .off || state.phase == .failed else { return }
         await start(readyOnly: true, requiresActivity: false)
@@ -78,28 +96,20 @@ final class SessionCoordinator: ObservableObject {
     private func start(readyOnly: Bool, requiresActivity: Bool) async {
         guard UIApplication.shared.isProtectedDataAvailable else { fail("Unlock your iPhone to start dictation"); return }
         guard store != nil else { fail("App Group unavailable — reinstall the signed beta"); return }
+        guard AVAudioApplication.shared.recordPermission == .granted else {
+            fail("Allow microphone access in On Air before turning it on"); return
+        }
         do { _ = try IPhoneKeychain.load() } catch { fail("Add and verify your OpenAI key in Setup"); return }
         state.sessionID = UUID(); seenCommands.removeAll(); state.turnID = nil
-        let sessionID = state.sessionID
         state.phase = .starting; state.issue = nil; state.canRetry = false
         retryPCM.removeAll(); retryUntil = nil
-        wantsReady = readyOnly || UserDefaults.standard.bool(forKey: "keepReady")
+        wantsReady = true
         publish()
-        let allowed: Bool
-        if requiresActivity, AVAudioApplication.shared.recordPermission != .granted {
-            fail("Open On Air and allow microphone access before using this shortcut"); return
-        }
-        if AVAudioApplication.shared.recordPermission == .undetermined {
-            allowed = await AVAudioApplication.requestRecordPermission()
-        } else { allowed = AVAudioApplication.shared.recordPermission == .granted }
-        guard state.sessionID == sessionID, state.phase == .starting else { return }
-        guard allowed else { fail("Allow Microphone in Settings to dictate"); return }
         do {
             try ensureActivity(required: requiresActivity)
             try capture.start(collecting: !readyOnly)
             captureRequestedAt = Date()
             state.audioAt = nil
-            state.readyUntil = wantsReady ? Date().addingTimeInterval(300) : nil
             if !readyOnly {
                 state.turnID = UUID(); state.destinationID = nil
                 try store?.clearResult(); transcript = nil
@@ -109,8 +119,7 @@ final class SessionCoordinator: ObservableObject {
         } catch { fail("Could not start the microphone. Open On Air and try again.") }
     }
     private func beginTurn(destinationID: UUID?) {
-        guard state.phase == .ready, state.isLive(), capture.running,
-              (state.readyUntil ?? .distantPast) > Date() else { return }
+        guard state.phase == .ready, state.isLive(), capture.running else { return }
         if let destinationID, store?.keyboardPresence()?.permits(destinationID) != true { return }
         retryPCM.removeAll(); retryUntil = nil
         state.turnID = UUID(); state.destinationID = destinationID
@@ -182,7 +191,7 @@ final class SessionCoordinator: ObservableObject {
         returnToReadyOrOff(); endBackgroundTask()
     }
     func turnOff() {
-        wantsReady = false; state.readyUntil = nil; cancel()
+        wantsReady = false; cancel()
         state.sessionID = UUID(); seenCommands.removeAll(); publish()
     }
     func copyTranscript() {
@@ -198,16 +207,16 @@ final class SessionCoordinator: ObservableObject {
     }
     private func returnToReadyOrOff() {
         state.level = 0; state.startedAt = nil
-        if wantsReady, capture.running, (state.readyUntil ?? .distantPast) > Date() {
+        if wantsReady, capture.running {
             state.phase = .ready
         } else {
-            capture.stop(); state.phase = .off; state.readyUntil = nil; wantsReady = false
+            capture.stop(); state.phase = .off; wantsReady = false
             transcriber.shutdown()
         }
         publish()
     }
     private func fail(_ message: String, retainAudio: Bool = false) {
-        capture.stop(); transcriber.shutdown(); wantsReady = false; state.readyUntil = nil
+        capture.stop(); transcriber.shutdown(); wantsReady = false
         state.phase = .failed; state.issue = message; state.level = 0
         state.canRetry = retainAudio && !retryPCM.isEmpty
         if !state.canRetry { retryPCM.removeAll(); retryUntil = nil }
@@ -243,7 +252,6 @@ final class SessionCoordinator: ObservableObject {
                 interrupt()
             }
         }
-        if state.phase == .ready, (state.readyUntil ?? .distantPast) <= now { turnOff() }
         if state.phase == .recording, now.timeIntervalSince(state.startedAt ?? now) >= 300 { finish() }
         if let retryUntil, retryUntil <= now { retryPCM.removeAll(); self.retryUntil = nil; state.canRetry = false; publish() }
         if now.timeIntervalSince(lastPublished) >= 0.1 {
@@ -268,6 +276,7 @@ final class SessionCoordinator: ObservableObject {
         if activity != nil, now.timeIntervalSince(lastActivityUpdate) >= 15 { syncActivity() }
     }
     private func publish(updateActivity: Bool = true) {
+        state.microphoneAuthorized = AVAudioApplication.shared.recordPermission == .granted
         state.revision &+= 1; state.updatedAt = Date(); lastPublished = state.updatedAt
         do {
             try store?.publish(state)
@@ -289,7 +298,7 @@ final class SessionCoordinator: ObservableObject {
     }
     private func activityContent() -> ActivityContent<OnAirActivity.ContentState> {
         ActivityContent(state: .init(phase: state.phase.rawValue, label: state.phase.label,
-            turnID: state.turnID?.uuidString ?? "", startedAt: state.startedAt, readyUntil: state.readyUntil),
+            turnID: state.turnID?.uuidString ?? "", startedAt: state.startedAt),
             staleDate: Date().addingTimeInterval(30))
     }
     private func ensureActivity(required: Bool) throws {

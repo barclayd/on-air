@@ -8,7 +8,6 @@ struct OnAirActivity: ActivityAttributes {
         var label: String
         var turnID: String
         var startedAt: Date?
-        var readyUntil: Date?
     }
     var sessionID: String
 }

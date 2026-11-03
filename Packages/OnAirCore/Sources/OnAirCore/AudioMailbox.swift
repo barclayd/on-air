@@ -21,6 +21,13 @@ public final class AudioMailbox: @unchecked Sendable {
         resetPending = true
         collecting = enabled; batch.pcm.removeAll(keepingCapacity: false); batch.overflow = false
     }
+    /// Construct the AVFoundation callback outside the capture owner's main actor.
+    /// Creating it inside AudioCapture.start inherits that actor on iOS and traps
+    /// when AVFoundation invokes it on its realtime messenger queue.
+    public nonisolated func makeTap(converter: AVAudioConverter, output: AVAudioFormat) -> AVAudioNodeTapBlock {
+        { [self] buffer, _ in receive(buffer, converter: converter, output: output) }
+    }
+
     public func receive(_ buffer: AVAudioPCMBuffer, converter: AVAudioConverter, output: AVAudioFormat) {
         lock.lock(); defer { lock.unlock() }
         batch.audioAt = Date()

@@ -62,8 +62,7 @@ struct OnAirLiveActivity: Widget {
     @ViewBuilder private func timer(_ state: OnAirActivity.ContentState) -> some View {
         if state.phase == "recording", let date = state.startedAt {
             Text(date, style: .timer).monospacedDigit().foregroundStyle(.secondary)
-        } else if state.phase == "ready", let until = state.readyUntil {
-            Text(timerInterval: Date()...max(Date(), until), countsDown: true).monospacedDigit().foregroundStyle(.secondary)
+
         }
     }
     private func controls(_ context: ActivityViewContext<OnAirActivity>) -> some View {

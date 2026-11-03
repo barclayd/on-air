@@ -172,3 +172,11 @@ real keyboard installation, foreground/background microphone behaviour,
 Shortcuts cold starts, host-app insertion or energy use. Follow the physical
 acceptance matrix in [the iOS plan](IOS-BETA-PLAN.md) and record outcomes against
 the exact beta version/build. See [beta setup](IOS-BETA.md).
+
+The iPhone permission checks reset the simulator's microphone authorisation and
+exercise both Allow and Don't Allow before any API key is saved. Denial keeps the
+On Air switch disabled and hides the practice field. The audio tap is constructed
+in the nonisolated mailbox and invoked on a background queue in regression
+coverage: an earlier device crash trapped in `AudioCapture.start(collecting:)`
+through `swift_task_checkIsolatedSwift` on AVFoundation's realtime messenger.
+Raw device crash reports remain private under `.build`.

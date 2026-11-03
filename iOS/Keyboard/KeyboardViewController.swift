@@ -14,11 +14,12 @@ final class KeyboardViewController: UIInputViewController {
     private var pendingCommand: SessionCommand?
     private var resumeAfter = Date.distantPast
     private var autoListen = true
+    private let inputModeButton = UIButton(type: .system)
+    private var contentBottom: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        model.nextKeyboard = { [weak self] in self?.leaveKeyboard(); self?.advanceToNextInputMode() }
         model.send = { [weak self] action in self?.send(action) }
         model.insert = { [weak self] in self?.deliver(explicit: true) }
         model.settings = { [weak self] in
@@ -30,18 +31,31 @@ final class KeyboardViewController: UIInputViewController {
         hosting.view.backgroundColor = .clear
         addChild(hosting); view.addSubview(hosting.view); hosting.didMove(toParent: self)
         hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        let contentBottom = hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        self.contentBottom = contentBottom
+        // Apple supplies the switcher below the keyboard on current iPhones.
+        // Supply its standard input-mode-list control only when UIKit requires it.
+        inputModeButton.setImage(UIImage(systemName: "globe"), for: .normal)
+        inputModeButton.accessibilityLabel = "Next keyboard"
+        inputModeButton.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
+        inputModeButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(inputModeButton)
         NSLayoutConstraint.activate([
+            inputModeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            inputModeButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -4),
+            inputModeButton.widthAnchor.constraint(equalToConstant: 44),
+            inputModeButton.heightAnchor.constraint(equalToConstant: 44),
             hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
             hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
             hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
-            hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+            contentBottom,
         ])
         self.hosting = hosting
     }
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
         autoListen = true; model.inserted = false; resumeAfter = .distantPast
-        visible = true; model.fullAccess = hasFullAccess; model.needsGlobe = needsInputModeSwitchKey
+        visible = true; model.fullAccess = hasFullAccess
         if hasFullAccess { store = try? SessionStore.appGroup(); try? store?.purge() }
         poll?.cancel()
         poll = Task { [weak self] in
@@ -53,7 +67,9 @@ final class KeyboardViewController: UIInputViewController {
     }
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let height: CGFloat = view.bounds.width > 600 ? 250 : 316
+        inputModeButton.isHidden = !needsInputModeSwitchKey
+        contentBottom?.constant = needsInputModeSwitchKey ? -48 : 0
+        let height: CGFloat = view.bounds.width > 600 ? 230 : 260
         if heightConstraint == nil {
             heightConstraint = view.heightAnchor.constraint(equalToConstant: height)
             heightConstraint?.priority = .init(999); heightConstraint?.isActive = true
@@ -98,7 +114,7 @@ final class KeyboardViewController: UIInputViewController {
         }
         if let pendingCommand, pendingCommand.expiresAt <= Date() {
             self.pendingCommand = nil; model.pending = false; insertion.invalidate(); autoListen = false
-            model.issue = "Open On Air and enable a keyboard session, then return here."
+            model.issue = "Open On Air and turn it on, then return here."
         }
         if let destinationID = insertion.destinationID {
             try? store?.publishKeyboardPresence(KeyboardPresence(destinationID: destinationID))
@@ -111,7 +127,7 @@ final class KeyboardViewController: UIInputViewController {
             }
         }
         if model.inserted, Date() >= resumeAfter { model.inserted = false }
-        if autoListen, !model.pending, model.result == nil, model.state.phase == .ready,
+        if autoListen, model.state.microphoneAuthorized, !model.pending, model.result == nil, model.state.phase == .ready,
            Date() >= resumeAfter {
             model.inserted = false
             send(.start)
@@ -129,10 +145,10 @@ final class KeyboardViewController: UIInputViewController {
     private func send(_ action: SessionAction) {
         guard hasFullAccess else { model.issue = "Enable Allow Full Access in Settings for dictation."; return }
         guard let store, let state = store.snapshot(), state.isLive() else {
-            model.issue = "Open On Air, tap Enable keyboard for 5 minutes, then return here."; return
+            model.issue = "Open On Air and turn it on, then return here."; return
         }
-        if action == .start, state.phase != .ready {
-            model.issue = "Open On Air, tap Enable keyboard for 5 minutes, then return here."; return
+        if action == .start, !state.microphoneAuthorized || state.phase != .ready {
+            model.issue = "Open On Air and turn it on, then return here."; return
         }
         let destination = action == .start ? insertion.capture(documentID: textDocumentProxy.documentIdentifier) : nil
         if action == .turnOff { autoListen = false }

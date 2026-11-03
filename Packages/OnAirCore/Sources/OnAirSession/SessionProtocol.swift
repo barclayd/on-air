@@ -5,7 +5,7 @@ public enum SessionPhase: String, Codable, Sendable {
     public var label: String {
         switch self {
         case .off: "Microphone off"
-        case .ready: "Ready — microphone active"
+        case .ready: "On"
         case .starting: "Starting"
         case .recording: "Listening"
         case .finishing: "Transcribing"
@@ -16,6 +16,7 @@ public enum SessionPhase: String, Codable, Sendable {
 
 public struct SessionSnapshot: Codable, Equatable, Sendable {
     public var schema = 1
+    public var microphoneAuthorized = false
     public var sessionID: UUID
     public var commandGeneration = UUID()
     public var revision: UInt64 = 0
@@ -26,7 +27,6 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
     public var updatedAt: Date
     public var audioAt: Date?
     public var startedAt: Date?
-    public var readyUntil: Date?
     public var level: Double = 0
     public var issue: String?
     public var canRetry = false
