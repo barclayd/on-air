@@ -54,8 +54,6 @@ struct DictationPanel: View {
                         }
                         Image(systemName: inserted ? "checkmark" : phase == .finishing ? "waveform" : "mic.fill")
                             .font(.system(size: 30, weight: .medium))
-                            .contentTransition(.symbolEffect(.replace))
-                            .transaction { if reducedMotion { $0.animation = nil; $0.disablesAnimations = true } }
                     }.frame(height: 64)
                 }.accessibilityHidden(true)
                 VStack(spacing: 6) {
