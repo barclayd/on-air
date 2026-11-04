@@ -26,7 +26,11 @@ struct PhoneHome: View {
                     }
                 }
                 if coordinator.state.phase == .ready {
-                    Section { Text("Use iOS’s back button to return to your app and dictate.").foregroundStyle(.secondary) }
+                    Section {
+                        Label("Ready for dictation", systemImage: "mic")
+                    } footer: {
+                        Text("The microphone stays available for your keyboard. Idle audio is discarded.")
+                    }
                 }
                 if active && coordinator.state.destinationID == nil && !practiceFocused {
                     DictationPanel(phase: coordinator.state.phase, level: coordinator.state.level,
@@ -61,12 +65,20 @@ struct PhoneHome: View {
             .sheet(isPresented: $showSetup, onDismiss: refreshKey) { PhoneSetup(coordinator: coordinator) }
             .onAppear(perform: refreshKey)
             .task { coordinator.refreshMicrophonePermission() }
+            .onChange(of: coordinator.microphoneGranted) { _, granted in
+                if granted { refreshKey() }
+            }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { coordinator.refreshMicrophonePermission(); refreshKey() }
             }
         }
     }
-    private func refreshKey() { hasKey = (try? IPhoneKeychain.load()) != nil }
+    private func refreshKey() {
+        hasKey = (try? IPhoneKeychain.load()) != nil
+        if hasKey, coordinator.microphoneGranted {
+            Task { await coordinator.activateReady() }
+        }
+    }
 }
 
 struct PhoneSetup: View {
@@ -116,13 +128,13 @@ struct PhoneSetup: View {
                         .lineLimit(3...6)
                         .onChange(of: notes) { _, value in if value.count > DictationPreferences.notesLimit { notes = String(value.prefix(DictationPreferences.notesLimit)) } }
                 } header: { Text("3 · Make it yours") } footer: {
-                    Text("Choose On Air from your keyboard list to dictate. Done ends recording and inserts your words.")
+                    Text("Choose On Air from your keyboard list to dictate. Done ends your dictation and inserts your words. The microphone stays ready for your next keyboard selection.")
                 }
                 Section("Shortcuts and Control Centre") {
                     Text("Add On Air’s Dictate control in Control Centre, or choose “Dictate with On Air” in Shortcuts or your Action Button settings. Tap again to finish. Allow Live Activities in Settings for background recording.")
                 }
                 Section("Privacy") {
-                    Text("Audio from active dictations is sent directly to OpenAI for transcription. Failed audio stays only in memory for up to five minutes so you can retry. Completed text is briefly saved in a protected, backup-excluded shared file for keyboard delivery; it expires after five minutes and is deleted when consumed or when the app next runs after expiry. No audio files or dictation history are saved. No analytics are collected.")
+                    Text("To avoid opening On Air for every dictation, iOS microphone access stays active in the background. The microphone indicator remains visible. Idle audio is discarded immediately; only active dictations are sent directly to OpenAI. Dismiss On Air’s Live Activity or close On Air to release the microphone. Failed audio stays only in memory for up to five minutes so you can retry. Completed text is briefly saved in a protected, backup-excluded shared file for keyboard delivery; it expires after five minutes and is deleted when consumed or when the app next runs after expiry. No audio files or dictation history are saved. No analytics are collected.")
                     Link("OpenAI data controls", destination: URL(string: "https://platform.openai.com/docs/guides/your-data")!)
                 }
             }.navigationTitle("Set up On Air").navigationBarTitleDisplayMode(.inline)

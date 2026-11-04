@@ -36,7 +36,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>On Air uses the microphone to transcribe your speech when you choose its keyboard or start dictation. Audio outside your dictation is discarded.</string>
+	<string>On Air keeps the microphone ready in the background so you can dictate from its keyboard. Only active dictations are transcribed; idle audio is discarded.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>audio</string>

@@ -20,6 +20,7 @@ private struct SyntheticAudioTap: @unchecked Sendable {
     var starts = 0
     var stops = 0
     var startupError: Error?
+    private var heartbeat: Task<Void, Never>?
     func start(collecting: Bool) throws {
         starts += 1
         if let startupError { throw startupError }
@@ -31,25 +32,31 @@ private struct SyntheticAudioTap: @unchecked Sendable {
         for i in 0..<9_600 { buffer.floatChannelData![0][i] = 0.1 }
         let callback = mailbox.makeTap(converter: AVAudioConverter(from: input, to: output)!, output: output)
         // Real input arrives after engine startup returns to the coordinator.
-        Task {
-            try? await Task.sleep(for: .milliseconds(20))
-            guard running else { return }
-            callback(buffer, AVAudioTime(sampleTime: 0, atRate: 48_000))
+        heartbeat?.cancel()
+        heartbeat = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard !Task.isCancelled, running else { return }
+                callback(buffer, AVAudioTime(sampleTime: 0, atRate: 48_000))
+            }
         }
     }
-    func stop() { stops += 1; running = false; mailbox.gate(false) }
+    func stop() { stops += 1; running = false; heartbeat?.cancel(); heartbeat = nil; mailbox.gate(false) }
 }
 
 @MainActor private final class FixtureTranscriber: Transcribing {
     var result: CheckedContinuation<String, Error>?
+    var begins = 0
+    var bytes = 0
     func warm() {}
-    func begin() {}
-    func append(_ pcm: Data) {}
+    func begin() { begins += 1 }
+    func append(_ pcm: Data) { bytes += pcm.count }
     func finish() async throws -> String { try await withCheckedThrowingContinuation { result = $0 } }
     func retry(_ pcm: Data) async throws -> String { "Synthetic dictation" }
     func cancel() { result?.resume(throwing: CancellationError()); result = nil }
     func shutdown() { cancel() }
     func complete() { result?.resume(returning: "Synthetic dictation"); result = nil }
+    func fail() { result?.resume(throwing: NSError(domain: "FixtureNetwork", code: 1)); result = nil }
 }
 
 struct FixtureScreen: View {
@@ -99,6 +106,10 @@ struct FixtureScreen: View {
                 keyboard.state.phase = value; keyboard.state.startedAt = startedAt
             }
             .task {
+                if ProcessInfo.processInfo.arguments.contains("--check-keyboard-session") ||
+                   ProcessInfo.processInfo.arguments.contains("--preview-keyboard-session") {
+                    await checkKeyboardSession(preview: ProcessInfo.processInfo.arguments.contains("--preview-keyboard-session"))
+                }
                 if ProcessInfo.processInfo.arguments.contains("--check-done-stops") {
                     do {
                         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -189,5 +200,118 @@ struct FixtureScreen: View {
                     try? await Task.sleep(for: .milliseconds(100))
                 }
             }
+    }
+}
+
+extension FixtureScreen {
+    @MainActor private func checkKeyboardSession(preview: Bool) async {
+        do {
+            let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            let store = try SessionStore(directory: directory)
+            defer { try? FileManager.default.removeItem(at: directory) }
+            let capture = FixtureCapture(); let client = FixtureTranscriber()
+            let session = SessionCoordinator(store: store, capture: capture, transcriber: client,
+                validateKey: {}, microphonePermission: { true }, systemIntegration: false)
+            defer { session.turnOff() }
+            func waitFor(_ expected: SessionPhase) async throws {
+                for _ in 0..<80 {
+                    if session.state.phase == expected { return }
+                    try await Task.sleep(for: .milliseconds(25))
+                }
+                throw AudioCapture.CaptureError.unavailable
+            }
+            func show() {
+                keyboard.fullAccess = true; keyboard.state = session.state
+                phase = session.state.phase; startedAt = session.state.startedAt
+            }
+            await session.activateReady()
+            try await waitFor(.ready)
+            if !preview {
+                audioStatus = "Waiting beyond the old handoff expiry"
+                try await Task.sleep(for: .seconds(31))
+                guard session.state.phase == .ready, capture.starts == 1 else { throw AudioCapture.CaptureError.unavailable }
+            }
+            try await Task.sleep(for: .milliseconds(150))
+            guard client.bytes == 0, capture.mailbox.take().pcm.isEmpty else { throw AudioCapture.CaptureError.unavailable }
+            let count = preview ? 3 : 20
+            for n in 1...count {
+                audioStatus = "Keyboard dictation \(n) of \(count) · one audio session"
+                let destination = UUID()
+                try store.publishKeyboardPresence(KeyboardPresence(destinationID: destination))
+                let lease = Task {
+                    while !Task.isCancelled {
+                        try? store.publishKeyboardPresence(KeyboardPresence(destinationID: destination))
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
+                defer { lease.cancel() }
+                try store.enqueue(SessionCommand(action: .start, snapshot: session.state, destinationID: destination))
+                try await waitFor(.recording); show()
+                if preview { try await Task.sleep(for: .milliseconds(450)) }
+                let staleStart = SessionCommand(action: .start, snapshot: session.state, destinationID: destination)
+                try store.enqueue(SessionCommand(action: .finish, snapshot: session.state))
+                try await waitFor(.finishing); show()
+                let bytesAtDone = client.bytes
+                try await Task.sleep(for: .milliseconds(preview ? 500 : 75))
+                guard capture.running, client.bytes == bytesAtDone, capture.mailbox.take().pcm.isEmpty,
+                      !staleStart.applies(to: session.state), client.result != nil else { throw AudioCapture.CaptureError.unavailable }
+                client.complete()
+                try await waitFor(.ready); show()
+                guard store.result()?.destinationID == destination else { throw AudioCapture.CaptureError.unavailable }
+                try store.consume(session.state.turnID!)
+                lease.cancel(); try store.clearKeyboardPresence(destinationID: destination)
+                if preview {
+                    keyboard.inserted = true
+                    try await Task.sleep(for: .milliseconds(700))
+                    keyboard.inserted = false; phase = .off
+                }
+                try await Task.sleep(for: .milliseconds(100))
+                guard session.state.phase == .ready, capture.starts == 1, capture.stops == 0,
+                      client.bytes == bytesAtDone, client.begins == n else { throw AudioCapture.CaptureError.unavailable }
+            }
+            if !preview {
+                let destination = UUID()
+                try store.publishKeyboardPresence(KeyboardPresence(destinationID: destination))
+                let lease = Task {
+                    while !Task.isCancelled {
+                        try? store.publishKeyboardPresence(KeyboardPresence(destinationID: destination))
+                        try? await Task.sleep(for: .milliseconds(100))
+                    }
+                }
+                defer { lease.cancel() }
+                try store.enqueue(SessionCommand(action: .start, snapshot: session.state, destinationID: destination))
+                try await waitFor(.recording)
+                try store.enqueue(SessionCommand(action: .finish, snapshot: session.state))
+                try await waitFor(.finishing)
+                for _ in 0..<40 {
+                    if client.result != nil { break }
+                    try await Task.sleep(for: .milliseconds(25))
+                }
+                client.fail(); try await waitFor(.failed)
+                guard session.state.canRetry, capture.running else { throw AudioCapture.CaptureError.unavailable }
+                await session.activateReady() // Foreground refresh must not discard retry audio.
+                guard session.state.phase == .failed, session.state.canRetry else { throw AudioCapture.CaptureError.unavailable }
+                try store.enqueue(SessionCommand(action: .retry, snapshot: session.state))
+                try await waitFor(.ready)
+                guard capture.starts == 1, store.result() != nil else { throw AudioCapture.CaptureError.unavailable }
+                try store.consume(session.state.turnID!)
+                lease.cancel(); try store.clearKeyboardPresence(destinationID: destination)
+            }
+            // Disappearing keyboards cancel only the current turn. Reuse survives
+            // locking, while explicit native session termination releases hardware.
+            let destination = UUID()
+            try store.publishKeyboardPresence(KeyboardPresence(destinationID: destination))
+            try store.enqueue(SessionCommand(action: .start, snapshot: session.state, destinationID: destination))
+            try await waitFor(.recording)
+            try store.clearKeyboardPresence(destinationID: destination)
+            try await waitFor(.ready)
+            NotificationCenter.default.post(name: UIApplication.protectedDataWillBecomeUnavailableNotification, object: nil)
+            try await Task.sleep(for: .milliseconds(100))
+            guard capture.running, session.state.phase == .ready, capture.starts == 1 else { throw AudioCapture.CaptureError.unavailable }
+            session.turnOff()
+            guard !capture.running, session.state.phase == .off else { throw AudioCapture.CaptureError.unavailable }
+            phase = .off
+            audioStatus = "\(count) dictations · one audio session · idle audio discarded"
+        } catch { audioStatus = "Keyboard session check failed"; phase = .off }
     }
 }

@@ -51,7 +51,7 @@ struct OnAirLiveActivity: Widget {
                 if context.isStale { Text("Check").font(.caption) }
                 else if context.state.phase == "recording", let date = context.state.startedAt {
                     Text(date, style: .timer).monospacedDigit().frame(maxWidth: 44)
-                } else { Text(context.state.phase == "finishing" ? "…" : "On").font(.caption) }
+                } else { Text(context.state.phase == "finishing" ? "…" : "Ready").font(.caption) }
             } minimal: {
                 Image(systemName: context.isStale ? "exclamationmark.circle" : "waveform")
                     .foregroundStyle(!context.isStale && context.state.phase == "recording" ? .red : .white)

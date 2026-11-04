@@ -25,7 +25,8 @@ final class AudioCapture: AudioCapturing {
         var candidate: AVAudioEngine?
         var installedTap = false
         do {
-            try session.setCategory(.record, mode: .measurement, options: [.allowBluetoothHFP])
+            try session.setCategory(.playAndRecord, mode: .measurement,
+                options: [.mixWithOthers, .allowBluetoothHFP])
             // Hardware preferences are advisory; the converter accepts the actual route.
             try? session.setPreferredSampleRate(24_000)
             try? session.setPreferredIOBufferDuration(0.02)

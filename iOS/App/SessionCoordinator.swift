@@ -23,7 +23,6 @@ final class SessionCoordinator: ObservableObject {
     private let microphonePermission: () -> Bool
     private let systemIntegration: Bool
     private enum ActivitySetupError: Error { case disabled }
-    private var handoffDeadline: Date?
     private var loop: Task<Void, Never>?
     private var completion: Task<Void, Never>?
     private var activityWatcher: Task<Void, Never>?
@@ -62,12 +61,17 @@ final class SessionCoordinator: ObservableObject {
         transcript = store?.result()
         publish()
         let centre = NotificationCenter.default
-        for name in [AVAudioSession.interruptionNotification, AVAudioSession.mediaServicesWereResetNotification,
-                     UIApplication.protectedDataWillBecomeUnavailableNotification] {
+        for name in [AVAudioSession.interruptionNotification, AVAudioSession.mediaServicesWereResetNotification] {
             observers.append(centre.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 Task { @MainActor in self?.interrupt() }
             })
         }
+        observers.append(centre.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                // End the turn on lock, but retain the gated keyboard session.
+                // New turns still require protected data to be available.
+                Task { @MainActor in self?.cancel() }
+            })
         observers.append(centre.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
             let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
             guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue ||
@@ -115,12 +119,16 @@ final class SessionCoordinator: ObservableObject {
     }
 
     func activateReady() async {
-        guard state.phase == .off || state.phase == .failed else { return }
+        guard state.phase == .off || state.phase == .failed, !state.canRetry else { return }
         guard !systemIntegration || UIApplication.shared.applicationState == .active else { return }
         await start(readyOnly: true, requiresActivity: false)
     }
     func startDictation(requiresActivity: Bool = false, destinationID: UUID? = nil) async {
-        if state.phase == .ready { beginTurn(destinationID: destinationID); return }
+        if state.phase == .ready {
+            do { try ensureActivity(required: requiresActivity) }
+            catch { fail("Open On Air and check Live Activities in Settings."); return }
+            beginTurn(destinationID: destinationID); return
+        }
         guard state.phase == .off || state.phase == .failed else { return }
         await start(readyOnly: false, requiresActivity: requiresActivity, destinationID: destinationID)
     }
@@ -135,8 +143,7 @@ final class SessionCoordinator: ObservableObject {
         state.sessionID = UUID(); seenCommands.removeAll(); state.turnID = nil; state.destinationID = destinationID
         state.phase = .starting; state.issue = nil; state.canRetry = false
         retryPCM.removeAll(); retryUntil = nil
-        wantsReady = readyOnly
-        handoffDeadline = readyOnly ? Date().addingTimeInterval(30) : nil
+        wantsReady = readyOnly || destinationID != nil
         publish()
         do { try ensureActivity(required: requiresActivity) }
         catch {
@@ -176,8 +183,10 @@ final class SessionCoordinator: ObservableObject {
     }
     private func beginTurn(destinationID: UUID?) {
         guard state.phase == .ready, state.isLive(), capture.running else { return }
+        guard UIApplication.shared.isProtectedDataAvailable else { cancel(); return }
+        guard microphonePermission() else { refreshMicrophonePermission(); return }
+        do { try validateKey() } catch { fail("Add and verify your OpenAI key in Setup"); return }
         if let destinationID, store?.keyboardPresence()?.permits(destinationID) != true { return }
-        handoffDeadline = nil
         retryPCM.removeAll(); retryUntil = nil
         state.turnID = UUID(); state.destinationID = destinationID
         state.phase = .starting; state.issue = nil; state.canRetry = false
@@ -192,8 +201,10 @@ final class SessionCoordinator: ObservableObject {
         // Drain the tail before closing the sample gate; no idle samples reach the socket.
         ingest(capture.mailbox.take())
         guard state.phase == .recording else { return }
-        wantsReady = false; handoffDeadline = nil
-        capture.stop()
+        // Keep the iOS audio session alive, as dictation keyboards must. The
+        // closed gate discards all idle samples before conversion or networking.
+        capture.mailbox.gate(false)
+        if !wantsReady { capture.stop() }
         state.commandGeneration = UUID() // Reject any queued start from this turn.
         state.phase = .finishing; state.level = 0; publish()
         guard retryPCM.count >= 4_800 else { fail("No speech captured — try a longer dictation"); return }
@@ -243,13 +254,15 @@ final class SessionCoordinator: ObservableObject {
         guard expectedTurn == nil || expectedTurn == state.turnID else { return }
         state.commandGeneration = UUID()
         completion?.cancel(); completion = nil; transcriber.cancel()
-        wantsReady = false; capture.stop(); retryPCM.removeAll(); retryUntil = nil
+        capture.mailbox.gate(false)
+        if !wantsReady { capture.stop() }
+        retryPCM.removeAll(); retryUntil = nil
         state.turnID = nil; state.destinationID = nil; state.canRetry = false; state.issue = nil
         try? store?.clearResult(); transcript = nil
         returnToReadyOrOff(); endBackgroundTask()
     }
     func turnOff() {
-        wantsReady = false; handoffDeadline = nil; cancel()
+        wantsReady = false; cancel()
         state.sessionID = UUID(); seenCommands.removeAll(); publish()
     }
     func copyTranscript() {
@@ -265,16 +278,18 @@ final class SessionCoordinator: ObservableObject {
     }
     private func returnToReadyOrOff() {
         state.level = 0; state.startedAt = nil
+        transcriber.shutdown()
         if wantsReady, capture.running {
             state.phase = .ready
         } else {
             capture.stop(); state.phase = .off; wantsReady = false
-            transcriber.shutdown()
         }
         publish()
     }
     private func fail(_ message: String, retainAudio: Bool = false) {
-        capture.stop(); transcriber.shutdown(); wantsReady = false
+        capture.mailbox.gate(false)
+        if !retainAudio || !wantsReady || !capture.running { capture.stop(); wantsReady = false }
+        transcriber.shutdown()
         state.phase = .failed; state.issue = message; state.level = 0
         state.canRetry = retainAudio && !retryPCM.isEmpty
         if !state.canRetry { retryPCM.removeAll(); retryUntil = nil }
@@ -310,9 +325,13 @@ final class SessionCoordinator: ObservableObject {
                 interrupt()
             }
         }
-        if state.phase == .ready, let handoffDeadline, now >= handoffDeadline { turnOff() }
         if state.phase == .recording, now.timeIntervalSince(state.startedAt ?? now) >= 300 { finish() }
-        if let retryUntil, retryUntil <= now { retryPCM.removeAll(); self.retryUntil = nil; state.canRetry = false; publish() }
+        if let retryUntil, retryUntil <= now {
+            retryPCM.removeAll(); self.retryUntil = nil; state.canRetry = false
+            if state.phase == .failed, wantsReady, capture.running {
+                state.issue = nil; returnToReadyOrOff()
+            } else { publish() }
+        }
         if now.timeIntervalSince(lastPublished) >= 0.1 {
             if let commands = try? store?.drain() {
                 for command in commands {
@@ -391,7 +410,7 @@ final class SessionCoordinator: ObservableObject {
         guard let current = activity else { return }
         lastActivityUpdate = Date()
         let content = activityContent()
-        let ends = state.phase == .off || state.phase == .failed
+        let ends = state.phase == .off || (state.phase == .failed && !capture.running)
         let previous = activityTail
         if ends { activity = nil; activityWatcher?.cancel(); activityWatcher = nil }
         activityTail = Task {

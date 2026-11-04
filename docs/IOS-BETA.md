@@ -11,24 +11,37 @@ iPhone's device-only Keychain. No key belongs in the repository or build setting
    Full Access. Use the globe button to return to your usual typing keyboard.
 3. Place the cursor in your app and select On Air from the keyboard list.
    Choosing the keyboard starts one dictation; there is no enable/disable switch.
-4. Tap **Done** to stop audio capture immediately. The shared Mac animation
-   changes from the red listening glow to the blue processing wave. After
-   insertion, a tick appears and the keyboard returns to normal typing.
-   No further dictation starts until On Air is chosen again.
-5. Hiding or switching keyboards cancels capture. Audio interruption, route
-   changes and protected-data loss also stop the microphone.
+4. Tap **Done** to finish the current dictation immediately. The shared Mac
+   animation changes from the red listening glow to the blue processing wave.
+   After insertion, a tick appears and the keyboard returns to normal typing.
+   Choosing On Air again starts a new turn through the same background audio session.
+5. Hiding or switching keyboards cancels the turn and discards audio. Locking
+   also cancels an active turn; starting a new turn requires an unlocked phone.
+   The gated background session remains available. Dismiss On Air's Live Activity
+   or close On Air to release the microphone; interruptions and route changes
+   release it as well.
 
-Apple does not allow keyboard extensions to access the microphone directly.
-When the containing app is asleep, keyboard selection attempts a public SwiftUI
-URL handoff to `onair://keyboard`; On Air prepares microphone capture and the
-user returns using iOS's native back control. If iOS refuses the automatic URL
-open, the keyboard provides an **Open On Air** link. No private host-app launcher
-or arbitrary-app return is used. An unfinished handoff shuts itself down rather
-than leaving the microphone ready indefinitely. While the containing app is
-already running, selection can start dictation directly through the shared
-command channel. Cold handoff and background restart still require device checks.
-Each active dictation is bounded to limit its in-memory audio, and completed
-results and failed retry audio retain their existing private expiry limits.
+## Why the microphone session stays active
+
+Apple does not allow keyboard extensions to access the microphone directly,
+including with Full Access ([Apple keyboard capabilities](https://developer.apple.com/documentation/uikit/configuring-open-access-for-a-custom-keyboard)).
+[Wispr Flow documents](https://wisprflow.ai/enterprise-privacy) that its iOS
+background mode retains microphone capture to avoid switching apps per dictation.
+On Air uses the same architecture: finishing setup prepares an audio session in
+its containing app, then the keyboard sends commands over protected shared storage.
+Done closes the audio gate before transcription; the engine remains running for
+the next selection. Idle samples are discarded before PCM conversion, retention
+or networking. The orange iOS microphone indicator therefore remains visible.
+Background audio mixes with other apps instead of pausing their playback.
+There are no enable switches or session-duration controls.
+
+A terminated app or released audio session still needs a foreground start under
+iOS's rules. Only those cold starts use the public SwiftUI `onair://keyboard`
+handoff and iOS's native return control; no private app-launch or auto-return API
+is used. An established session has no handoff expiry and is reused after Done,
+keyboard changes and locking. Background resumption, routes, battery impact and
+cross-app insertion still need physical-device checks. Active dictations and
+private result/retry retention keep their existing bounds.
 
 The Shortcuts/Action Button intent and Control Centre button
 start or finish dictation through the containing app and require a Live Activity
@@ -60,6 +73,12 @@ a Mac Debug build. The Mac E2E run covered 75 tests; a blue endpoint rounding
 regression found there was fixed and both visual checks rerun successfully with
 the original baselines. Development signing now succeeds for the app and both
 extensions with the shared App Group.
+A production-coordinator regression executes twenty keyboard command cycles with
+synthetic PCM and controlled transcription. It checks one engine activation,
+no idle PCM or network appends, fresh destination IDs per turn, Done, lost keyboard
+leases, lock cancellation and explicit session shutdown. One-shot app dictation
+still releases the engine on Done.
+
 The simulator checks establish presentation and setup behaviour, not working
 physical microphone capture or background keyboard dictation. Startup failure/recovery and permission revocation use the production coordinator with controlled audio/network boundaries. Stale connection status preserves the last known consent and error; it never serves as proof of live capture. Optional Live Activity creation cannot block keyboard dictation. Native permission actions distinguish undecided, allowed and denied access.
 

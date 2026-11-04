@@ -20,6 +20,13 @@ final class PhoneUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Done stopped microphone"].waitForExistence(timeout: 10))
     }
 
+    @MainActor func testTwentyKeyboardDictationsReuseSessionWithoutCollectingIdleAudio() {
+        let app = XCUIApplication(bundleIdentifier: "com.danbarclay.onair.ios.fixture")
+        app.launchArguments = ["--check-keyboard-session"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["20 dictations · one audio session · idle audio discarded"].waitForExistence(timeout: 70))
+    }
+
     @MainActor func testStartupFailureRecoversAndPermissionRevocationStopsCapture() {
         let app = XCUIApplication(bundleIdentifier: "com.danbarclay.onair.ios.fixture")
         app.launchArguments = ["--check-start-recovery"]

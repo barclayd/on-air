@@ -5,7 +5,7 @@ public enum SessionPhase: String, Codable, Sendable {
     public var label: String {
         switch self {
         case .off: "Microphone off"
-        case .ready: "On"
+        case .ready: "Ready for dictation"
         case .starting: "Starting"
         case .recording: "Listening"
         case .finishing: "Transcribing"
