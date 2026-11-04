@@ -45,6 +45,23 @@ struct SessionTests {
         state.updatedAt = now.addingTimeInterval(5)
         #expect(state.isLive(at: now.addingTimeInterval(5)))
     }
+    @Test func staleKeyboardStatusPreservesPermissionAndFailure() {
+        var state = SessionSnapshot(now: now)
+        state.microphoneAuthorized = true
+        state.phase = .recording; state.audioAt = now
+        let expired = state.keyboardPresentation(at: now.addingTimeInterval(3))
+        #expect(expired.microphoneAuthorized)
+        #expect(expired.phase == .failed)
+        #expect(!expired.canRetry)
+        #expect(expired.issue?.contains("reconnect") == true)
+        state.phase = .failed; state.issue = "Microphone in use"; state.canRetry = true
+        #expect(state.keyboardPresentation(at: now.addingTimeInterval(30)) == state)
+        state.phase = .off
+        #expect(state.keyboardPresentation(at: now.addingTimeInterval(30)) == state)
+        state.microphoneAuthorized = false
+        #expect(!state.keyboardPresentation(at: now.addingTimeInterval(30)).microphoneAuthorized)
+    }
+
     @Test func commandsExpireAndCannotCrossSessionsOrTurns() {
         var state = SessionSnapshot(now: now); state.phase = .recording; state.turnID = UUID()
         let finish = SessionCommand(action: .finish, snapshot: state, now: now)

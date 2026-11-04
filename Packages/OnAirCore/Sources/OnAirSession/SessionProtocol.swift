@@ -35,6 +35,16 @@ public struct SessionSnapshot: Codable, Equatable, Sendable {
         self.sessionID = sessionID; updatedAt = now
     }
 
+    /// Permission and terminal errors outlive the audio heartbeat. Expired active
+    /// state must not masquerade as denied consent or an available microphone.
+    public func keyboardPresentation(at now: Date = Date()) -> SessionSnapshot {
+        guard !isLive(at: now), phase != .off, phase != .failed else { return self }
+        var result = self
+        result.phase = .failed; result.level = 0; result.canRetry = false
+        result.issue = "Open On Air to reconnect the microphone, then return here."
+        return result
+    }
+
     public func isLive(at now: Date = Date()) -> Bool {
         guard schema == 1, now.timeIntervalSince(updatedAt) < 2,
               now.timeIntervalSince(updatedAt) >= -1 else { return false }

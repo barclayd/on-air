@@ -20,6 +20,13 @@ final class PhoneUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Done stopped microphone"].waitForExistence(timeout: 10))
     }
 
+    @MainActor func testStartupFailureRecoversAndPermissionRevocationStopsCapture() {
+        let app = XCUIApplication(bundleIdentifier: "com.danbarclay.onair.ios.fixture")
+        app.launchArguments = ["--check-start-recovery"]
+        app.launch()
+        XCTAssertTrue(app.staticTexts["Startup recovered; revocation stopped capture"].waitForExistence(timeout: 10))
+    }
+
     @MainActor func testIOSAudioTapRunsOnBackgroundQueue() {
         let app = XCUIApplication(bundleIdentifier: "com.danbarclay.onair.ios.fixture")
         app.launchArguments = ["--check-audio-callback"]
@@ -31,6 +38,8 @@ final class PhoneUITests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "com.danbarclay.onair.ios")
         app.resetAuthorizationStatus(for: .microphone)
         app.launch()
+        XCTAssertTrue(app.buttons["Allow microphone access"].waitForExistence(timeout: 10))
+        app.buttons["Allow microphone access"].tap()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         XCTAssertTrue(springboard.alerts.firstMatch.waitForExistence(timeout: 10))
         springboard.alerts.firstMatch.buttons["Allow"].tap()
@@ -50,6 +59,8 @@ final class PhoneUITests: XCTestCase {
         let app = XCUIApplication(bundleIdentifier: "com.danbarclay.onair.ios")
         app.resetAuthorizationStatus(for: .microphone)
         app.launch()
+        XCTAssertTrue(app.buttons["Allow microphone access"].waitForExistence(timeout: 10))
+        app.buttons["Allow microphone access"].tap()
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         XCTAssertTrue(springboard.alerts.firstMatch.waitForExistence(timeout: 10))
         springboard.alerts.firstMatch.buttons["Don’t Allow"].tap()

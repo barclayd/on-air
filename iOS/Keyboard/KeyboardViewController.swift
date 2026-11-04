@@ -15,6 +15,7 @@ final class KeyboardViewController: UIInputViewController {
     private var resumeAfter = Date.distantPast
     private var returnToTyping = false
     private var autoListen = true
+    private var waitingForMicrophone = false
     private let inputModeButton = UIButton(type: .system)
     private var contentBottom: NSLayoutConstraint?
     private var heightConstraint: NSLayoutConstraint?
@@ -102,10 +103,13 @@ final class KeyboardViewController: UIInputViewController {
         }
         if store == nil { store = try? SessionStore.appGroup() }
         if let snapshot = store?.snapshot() {
-            if snapshot.isLive() || snapshot.phase == .off {
+            if snapshot.isLive() || snapshot.phase == .off || snapshot.phase == .failed {
                 let oldPhase = model.state.phase
                 model.state = snapshot
-                if snapshot.phase == .recording || snapshot.phase == .finishing { autoListen = false }
+                if model.needsHandoff, snapshot.phase == .ready, snapshot.isLive() {
+                    model.needsHandoff = false; model.issue = nil; autoListen = true
+                }
+                if snapshot.phase == .recording || snapshot.phase == .finishing { autoListen = false; waitingForMicrophone = false }
                 if oldPhase != snapshot.phase {
                     UIAccessibility.post(notification: .announcement, argument: snapshot.phase.label)
                 }
@@ -114,7 +118,7 @@ final class KeyboardViewController: UIInputViewController {
                 }
             } else {
                 if model.state.phase != .off { insertion.invalidate() }
-                model.state = SessionSnapshot()
+                model.state = snapshot.keyboardPresentation()
             }
         }
         if let pendingCommand, pendingCommand.expiresAt <= Date() {
@@ -140,8 +144,13 @@ final class KeyboardViewController: UIInputViewController {
             model.inserted = false
             if returnToTyping { returnToTyping = false; advanceToNextInputMode(); return }
         }
+        if !model.pending, model.result == nil, model.state.phase == .failed, !model.state.canRetry,
+           autoListen || waitingForMicrophone {
+            // One handoff for a failed start; never reopen after Done or retry in a loop.
+            autoListen = false; waitingForMicrophone = false; model.needsHandoff = true
+        }
         if autoListen, !model.state.microphoneAuthorized, !model.pending {
-            autoListen = false; model.needsHandoff = true
+            autoListen = false; waitingForMicrophone = false; model.needsHandoff = true
         }
         if autoListen, model.state.microphoneAuthorized, !model.pending, model.result == nil,
            model.state.phase == .ready || model.state.phase == .off,
@@ -151,7 +160,7 @@ final class KeyboardViewController: UIInputViewController {
         }
     }
     private func leaveKeyboard() {
-        autoListen = false
+        autoListen = false; waitingForMicrophone = false
         if let destinationID = insertion.destinationID {
             try? store?.clearKeyboardPresence(destinationID: destinationID)
         }
@@ -161,14 +170,15 @@ final class KeyboardViewController: UIInputViewController {
     }
     private func send(_ action: SessionAction) {
         guard hasFullAccess else { model.issue = "Enable Allow Full Access in Settings for dictation."; return }
-        guard let store, let state = store.snapshot(), state.isLive() || (action == .start && state.phase == .off) else {
+        guard let store, let state = store.snapshot(), state.isLive() || (action == .start && state.phase == .off) ||
+                (action == .retry && state.phase == .failed && state.canRetry) else {
             model.issue = "Open On Air to prepare your microphone, then return here."; return
         }
         if action == .start, !state.microphoneAuthorized || (state.phase != .ready && state.phase != .off) {
             model.issue = "Open On Air to prepare your microphone, then return here."; return
         }
         let destination = action == .start ? insertion.capture(documentID: textDocumentProxy.documentIdentifier) : nil
-        if action == .finish || action == .cancel || action == .turnOff { autoListen = false }
+        if action == .finish || action == .cancel || action == .turnOff { autoListen = false; waitingForMicrophone = false }
         if action == .finish { returnToTyping = true }
         if action == .cancel { resumeAfter = Date().addingTimeInterval(0.3) }
         if action == .cancel || action == .turnOff {
@@ -179,7 +189,7 @@ final class KeyboardViewController: UIInputViewController {
         do {
             if let destination { try store.publishKeyboardPresence(KeyboardPresence(destinationID: destination)) }
             try store.enqueue(command); pendingCommand = command; model.pending = true; model.issue = nil
-            if action == .start { autoListen = false }
+            if action == .start { autoListen = false; waitingForMicrophone = true }
         } catch { insertion.invalidate(); autoListen = false; model.issue = "Could not contact On Air. Open On Air and try again." }
     }
     private func deliver(explicit: Bool) {

@@ -2,6 +2,7 @@
 import AVFAudio
 import Combine
 import UIKit
+import OSLog
 import OnAirCore
 import OnAirSession
 
@@ -12,6 +13,7 @@ final class SessionCoordinator: ObservableObject {
     static let shared = SessionCoordinator()
     @Published private(set) var state = SessionSnapshot()
     @Published private(set) var microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
+    @Published private(set) var microphoneUndetermined = AVAudioApplication.shared.recordPermission == .undetermined
     private var permissionTask: Task<Bool, Never>?
     @Published private(set) var transcript: TranscriptRecord?
     private let capture: any AudioCapturing
@@ -20,6 +22,7 @@ final class SessionCoordinator: ObservableObject {
     private let validateKey: () throws -> Void
     private let microphonePermission: () -> Bool
     private let systemIntegration: Bool
+    private enum ActivitySetupError: Error { case disabled }
     private var handoffDeadline: Date?
     private var loop: Task<Void, Never>?
     private var completion: Task<Void, Never>?
@@ -82,6 +85,16 @@ final class SessionCoordinator: ObservableObject {
 
     /// Permission is requested in the foreground setup flow, independently of API credentials.
     func prepareMicrophone() async {
+        // A URL can arrive before the receiving scene becomes active. Never ask
+        // TCC or activate the microphone during that transition.
+        if systemIntegration {
+            for _ in 0..<40 {
+                if UIApplication.shared.applicationState == .active { break }
+                try? await Task.sleep(for: .milliseconds(50))
+                if Task.isCancelled { return }
+            }
+            guard UIApplication.shared.applicationState == .active else { return }
+        }
         if let permissionTask { _ = await permissionTask.value; refreshMicrophonePermission(); return }
         let task = Task {
             if AVAudioApplication.shared.recordPermission == .undetermined {
@@ -95,6 +108,7 @@ final class SessionCoordinator: ObservableObject {
         refreshMicrophonePermission()
     }
     func refreshMicrophonePermission() {
+        microphoneUndetermined = AVAudioApplication.shared.recordPermission == .undetermined
         microphoneGranted = microphonePermission()
         if !microphoneGranted, state.phase != .off { turnOff() }
         publish()
@@ -102,6 +116,7 @@ final class SessionCoordinator: ObservableObject {
 
     func activateReady() async {
         guard state.phase == .off || state.phase == .failed else { return }
+        guard !systemIntegration || UIApplication.shared.applicationState == .active else { return }
         await start(readyOnly: true, requiresActivity: false)
     }
     func startDictation(requiresActivity: Bool = false, destinationID: UUID? = nil) async {
@@ -113,7 +128,7 @@ final class SessionCoordinator: ObservableObject {
         guard UIApplication.shared.isProtectedDataAvailable else { fail("Unlock your iPhone to start dictation"); return }
         guard store != nil else { fail("App Group unavailable — reinstall the signed beta"); return }
         guard microphonePermission() else {
-            fail("Allow microphone access in On Air before turning it on"); return
+            fail("Allow microphone access in On Air Setup before dictating."); return
         }
         do { try validateKey() } catch { fail("Add and verify your OpenAI key in Setup"); return }
         if let destinationID, store?.keyboardPresence()?.permits(destinationID) != true { return }
@@ -123,18 +138,41 @@ final class SessionCoordinator: ObservableObject {
         wantsReady = readyOnly
         handoffDeadline = readyOnly ? Date().addingTimeInterval(30) : nil
         publish()
+        do { try ensureActivity(required: requiresActivity) }
+        catch {
+            fail(error is ActivitySetupError
+                 ? "Allow Live Activities for On Air in Settings to use this control."
+                 : "Open On Air before using this control.")
+            return
+        }
+        captureRequestedAt = Date()
+        state.audioAt = nil
+        do { try capture.start(collecting: !readyOnly) }
+        catch {
+            let failure = error as NSError
+            // Only codes are logged: no audio, transcripts, credentials or error userInfo.
+            Logger(subsystem: "com.danbarclay.onair.ios", category: "microphone").error("Start failed: domain=\(failure.domain, privacy: .public) code=\(failure.code) foreground=\(UIApplication.shared.applicationState == .active)")
+            if !microphonePermission() {
+                refreshMicrophonePermission()
+                fail("Allow microphone access in On Air Setup before dictating.")
+            } else if failure.domain == NSOSStatusErrorDomain,
+                      failure.code == AVAudioSession.ErrorCode.insufficientPriority.rawValue {
+                fail("The microphone is in use by a call or another app. Try again when it finishes.")
+            } else if UIApplication.shared.applicationState != .active {
+                fail("Open On Air to start the microphone, then return to your app.")
+            } else {
+                fail("The microphone is unavailable. Check your audio connection, then try again.")
+            }
+            return
+        }
         do {
-            try ensureActivity(required: requiresActivity)
-            try capture.start(collecting: !readyOnly)
-            captureRequestedAt = Date()
-            state.audioAt = nil
             if !readyOnly {
                 state.turnID = UUID(); state.destinationID = destinationID
                 try store?.clearResult(); transcript = nil
                 transcriber.begin()
             }
             publish()
-        } catch { fail("Could not start the microphone. Open On Air and try again.") }
+        } catch { fail("Could not prepare dictation. Try again.") }
     }
     private func beginTurn(destinationID: UUID?) {
         guard state.phase == .ready, state.isLive(), capture.running else { return }
@@ -327,10 +365,15 @@ final class SessionCoordinator: ObservableObject {
     private func ensureActivity(required: Bool) throws {
         guard systemIntegration else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
-            if required { throw AudioCapture.CaptureError.unavailable }; return
+            if required { throw ActivitySetupError.disabled }; return
         }
+        // Optional presentation must never block microphone startup. iOS can
+        // reject new activities while the containing app is in the background.
+        guard required || UIApplication.shared.applicationState == .active else { return }
         if activity == nil {
-            let current = try Activity.request(attributes: OnAirActivity(sessionID: state.sessionID.uuidString), content: activityContent(), pushType: nil)
+            let current: Activity<OnAirActivity>
+            do { current = try Activity.request(attributes: OnAirActivity(sessionID: state.sessionID.uuidString), content: activityContent(), pushType: nil) }
+            catch { if required { throw error }; return }
             activity = current
             activityWatcher?.cancel()
             activityWatcher = Task { [weak self] in

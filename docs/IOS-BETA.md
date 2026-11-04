@@ -6,7 +6,7 @@ iPhone's device-only Keychain. No key belongs in the repository or build setting
 
 ## Trying the beta
 
-1. Install the signed app and allow microphone access when iOS asks. Open Setup and verify your OpenAI key.
+1. Install and open the signed app. Tap **Allow microphone access**, then **Allow** in Apple’s permission prompt. Setup shows **Allowed** if access was already granted, or **Open Settings** if it was denied. Verify your OpenAI key in Setup.
 2. In Settings → General → Keyboard → Keyboards, add On Air and enable Allow
    Full Access. Use the globe button to return to your usual typing keyboard.
 3. Place the cursor in your app and select On Air from the keyboard list.
@@ -54,14 +54,16 @@ sources directly. Credentials and OS input/audio ownership remain platform-speci
 
 ## Validation status
 
-The implementation has passed nineteen portable transport, insertion and real PCM
+The implementation has passed twenty portable transport, insertion and real PCM
 mailbox checks, the existing Mac core checks, iPhone simulator UI checks and
 a Mac Debug build. The Mac E2E run covered 75 tests; a blue endpoint rounding
 regression found there was fixed and both visual checks rerun successfully with
 the original baselines. Development signing now succeeds for the app and both
 extensions with the shared App Group.
 The simulator checks establish presentation and setup behaviour, not working
-physical microphone capture or background keyboard dictation.
+physical microphone capture or background keyboard dictation. Startup failure/recovery and permission revocation use the production coordinator with controlled audio/network boundaries. Stale connection status preserves the last known consent and error; it never serves as proof of live capture. Optional Live Activity creation cannot block keyboard dictation. Native permission actions distinguish undecided, allowed and denied access.
+
+On an existing installation, Apple does not repeat a permission prompt that was already answered. Check **Setup → Microphone** for the current status. After a startup failure, **Try microphone again** prepares capture in the foreground; a call or another higher-priority audio session may need to finish first. Startup diagnostics record error domain/code and foreground status only.
 
 The initial development beta was installed on the paired iPhone Duo. Exact
 build availability and TestFlight delivery status are recorded on the

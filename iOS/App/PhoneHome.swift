@@ -17,8 +17,7 @@ struct PhoneHome: View {
             Form {
                 if !coordinator.microphoneGranted {
                     Section("Microphone") {
-                        Text("Allow microphone access before using On Air.")
-                        Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                        MicrophoneAccess(coordinator: coordinator)
                     }
                 }
                 if !hasKey {
@@ -38,6 +37,9 @@ struct PhoneHome: View {
                     Section {
                         Text(issue).foregroundStyle(.secondary)
                         if coordinator.state.canRetry { Button("Retry transcription") { coordinator.retry() } }
+                        else if coordinator.microphoneGranted && hasKey && coordinator.state.phase == .failed {
+                            Button("Try microphone again") { Task { await coordinator.activateReady() } }
+                        }
                     }
                 }
                 if let result = coordinator.transcript {
@@ -58,7 +60,7 @@ struct PhoneHome: View {
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Setup", systemImage: "slider.horizontal.3") { showSetup = true } } }
             .sheet(isPresented: $showSetup, onDismiss: refreshKey) { PhoneSetup(coordinator: coordinator) }
             .onAppear(perform: refreshKey)
-            .task { await coordinator.prepareMicrophone() }
+            .task { coordinator.refreshMicrophonePermission() }
             .onChange(of: scenePhase) { _, phase in
                 if phase == .active { coordinator.refreshMicrophonePermission(); refreshKey() }
             }
@@ -82,11 +84,7 @@ struct PhoneSetup: View {
         NavigationStack {
             Form {
                 Section("Microphone") {
-                    Label(coordinator.microphoneGranted ? "Allowed" : "Access required",
-                        systemImage: coordinator.microphoneGranted ? "checkmark.circle" : "mic")
-                    if !coordinator.microphoneGranted {
-                        Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
-                    }
+                    MicrophoneAccess(coordinator: coordinator)
                 }
                 Section {
                     SecureField(saved ? "Replace OpenAI key" : "OpenAI API key", text: $key)
@@ -150,6 +148,22 @@ struct PhoneSetup: View {
                 guard !Task.isCancelled, verificationID == id else { return }
                 status = (error as? TranscriptionError)?.localizedDescription ?? "Could not save the key. Try again."
             }
+        }
+    }
+}
+
+/// Permission is a one-time iOS consent step, separate from recording controls.
+private struct MicrophoneAccess: View {
+    @ObservedObject var coordinator: SessionCoordinator
+    var body: some View {
+        if coordinator.microphoneGranted {
+            Label("Allowed", systemImage: "checkmark.circle")
+        } else if coordinator.microphoneUndetermined {
+            Text("On Air needs microphone access to hear your dictation.")
+            Button("Allow microphone access") { Task { await coordinator.prepareMicrophone() } }
+        } else {
+            Text("Microphone access is denied. Allow On Air to use the microphone in Settings.")
+            Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
         }
     }
 }

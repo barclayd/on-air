@@ -19,8 +19,11 @@ private struct SyntheticAudioTap: @unchecked Sendable {
     var running = false
     var starts = 0
     var stops = 0
+    var startupError: Error?
     func start(collecting: Bool) throws {
-        starts += 1; running = true; mailbox.gate(collecting)
+        starts += 1
+        if let startupError { throw startupError }
+        running = true; mailbox.gate(collecting)
         let input = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!
         let output = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: 24_000, channels: 1, interleaved: false)!
         let buffer = AVAudioPCMBuffer(pcmFormat: input, frameCapacity: 9_600)!
@@ -121,6 +124,37 @@ struct FixtureScreen: View {
                             session.state.phase == .off && store.result() != nil ? "Done stopped microphone" : "Stop check failed: \(session.state.phase.rawValue), starts \(capture.starts), running \(capture.running), stopped early \(stoppedBeforeTranscription), result \(store.result() != nil), issue \(session.state.issue ?? "none")"
                         session.turnOff()
                     } catch { audioStatus = "Stop check failed" }
+                }
+                if ProcessInfo.processInfo.arguments.contains("--check-start-recovery") {
+                    do {
+                        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                        let store = try SessionStore(directory: directory)
+                        defer { try? FileManager.default.removeItem(at: directory) }
+                        let capture = FixtureCapture(); let transcriber = FixtureTranscriber()
+                        var allowed = true
+                        let session = SessionCoordinator(store: store, capture: capture, transcriber: transcriber,
+                            validateKey: {}, microphonePermission: { allowed }, systemIntegration: false)
+                        capture.startupError = NSError(domain: NSOSStatusErrorDomain,
+                            code: AVAudioSession.ErrorCode.insufficientPriority.rawValue)
+                        await session.startDictation()
+                        let failedSafely = !capture.running && session.state.phase == .failed &&
+                            session.state.microphoneAuthorized && session.state.issue?.contains("call") == true
+                        try await Task.sleep(for: .milliseconds(250))
+                        let noAutomaticRestart = capture.starts == 1
+                        capture.startupError = nil
+                        await session.startDictation()
+                        for _ in 0..<40 {
+                            if session.state.phase == .recording { break }
+                            try await Task.sleep(for: .milliseconds(25))
+                        }
+                        let recovered = session.state.phase == .recording && capture.starts == 2
+                        allowed = false; session.refreshMicrophonePermission()
+                        let revoked = !capture.running && session.state.phase == .off && !session.state.microphoneAuthorized
+                        await session.startDictation()
+                        audioStatus = failedSafely && noAutomaticRestart && recovered && revoked && capture.starts == 2
+                            ? "Startup recovered; revocation stopped capture" : "Recovery check failed"
+                        session.turnOff()
+                    } catch { audioStatus = "Recovery check failed" }
                 }
                 if ProcessInfo.processInfo.arguments.contains("--check-audio-callback") {
                     let input = AVAudioFormat(standardFormatWithSampleRate: 48_000, channels: 1)!

@@ -34,7 +34,7 @@ struct KeyboardView: View {
                     Text(model.fullAccess ? (model.state.microphoneAuthorized ? model.state.phase.label : "Open On Air") : "Allow Full Access")
                         .font(.title3.weight(.semibold))
                     Text(model.issue ?? model.state.issue ?? (model.fullAccess
-                         ? "Open On Air to finish microphone setup, then return here."
+                         ? (model.state.microphoneAuthorized ? "Open On Air to reconnect the microphone, then return here." : "Allow microphone access in On Air Setup, then return here.")
                          : "Enable Allow Full Access for On Air in Keyboard Settings."))
                         .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
@@ -52,7 +52,7 @@ struct KeyboardView: View {
         .onChange(of: model.needsHandoff) { _, needed in
             if needed {
                 openURL(URL(string: "onair://keyboard")!) { accepted in
-                    if !accepted { model.issue = "Open On Air once to prepare your microphone." }
+                    if !accepted && model.issue == nil && model.state.issue == nil { model.issue = "Open On Air to start the microphone, then return here." }
                 }
             }
         }
