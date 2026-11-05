@@ -1,0 +1,216 @@
+import Combine
+import SwiftUI
+import UIKit
+import OnAirSession
+
+final class KeyboardViewController: UIInputViewController {
+    private let model = KeyboardModel()
+    private var store: SessionStore?
+    private var hosting: UIHostingController<KeyboardView>?
+    private var poll: Task<Void, Never>?
+    private var visible = false
+    private var insertion = InsertionGuard()
+    private var inserting = false
+    private var pendingCommand: SessionCommand?
+    private var resumeAfter = Date.distantPast
+    private var returnToTyping = false
+    private var autoListen = true
+    private var waitingForMicrophone = false
+    private let inputModeButton = UIButton(type: .system)
+    private var contentBottom: NSLayoutConstraint?
+    private var heightConstraint: NSLayoutConstraint?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        hasDictationKey = true
+        model.send = { [weak self] action in self?.send(action) }
+        model.insert = { [weak self] in self?.deliver(explicit: true) }
+        model.settings = { [weak self] in
+            // Public settings route only. Cold activation uses an explicit visit
+            // to the containing app; no responder-chain/private launch workaround.
+            self?.extensionContext?.open(URL(string: UIApplication.openSettingsURLString)!)
+        }
+        let hosting = UIHostingController(rootView: KeyboardView(model: model))
+        hosting.view.backgroundColor = .clear
+        addChild(hosting); view.addSubview(hosting.view); hosting.didMove(toParent: self)
+        hosting.view.translatesAutoresizingMaskIntoConstraints = false
+        let contentBottom = hosting.view.bottomAnchor.constraint(equalTo: view.bottomAnchor)
+        self.contentBottom = contentBottom
+        // Apple supplies the switcher below the keyboard on current iPhones.
+        // Supply its standard input-mode-list control only when UIKit requires it.
+        inputModeButton.setImage(UIImage(systemName: "globe"), for: .normal)
+        inputModeButton.accessibilityLabel = "Next keyboard"
+        inputModeButton.addTarget(self, action: #selector(handleInputModeList(from:with:)), for: .allTouchEvents)
+        inputModeButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(inputModeButton)
+        NSLayoutConstraint.activate([
+            inputModeButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 12),
+            inputModeButton.bottomAnchor.constraint(equalTo: view.bottomAnchor, constant: -4),
+            inputModeButton.widthAnchor.constraint(equalToConstant: 44),
+            inputModeButton.heightAnchor.constraint(equalToConstant: 44),
+            hosting.view.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            hosting.view.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            hosting.view.topAnchor.constraint(equalTo: view.topAnchor),
+            contentBottom,
+        ])
+        self.hosting = hosting
+    }
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        autoListen = !returnToTyping
+        model.needsHandoff = false
+        if !returnToTyping { model.inserted = false; resumeAfter = .distantPast }
+        visible = true; model.fullAccess = hasFullAccess
+        if hasFullAccess { store = try? SessionStore.appGroup(); try? store?.purge() }
+        poll?.cancel()
+        poll = Task { [weak self] in
+            while !Task.isCancelled {
+                self?.refresh()
+                try? await Task.sleep(for: .milliseconds(100))
+            }
+        }
+    }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        inputModeButton.isHidden = !needsInputModeSwitchKey
+        contentBottom?.constant = needsInputModeSwitchKey ? -48 : 0
+        let height: CGFloat = view.bounds.width > 600 ? 230 : 260
+        if heightConstraint == nil {
+            heightConstraint = view.heightAnchor.constraint(equalToConstant: height)
+            heightConstraint?.priority = .init(999); heightConstraint?.isActive = true
+        } else { heightConstraint?.constant = height }
+    }
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        leaveKeyboard()
+        visible = false; poll?.cancel(); poll = nil
+        pendingCommand = nil; model.pending = false
+    }
+    override func textDidChange(_ textInput: (any UITextInput)?) {
+        super.textDidChange(textInput)
+        if !inserting { insertion.invalidate() }
+    }
+    override func selectionDidChange(_ textInput: (any UITextInput)?) {
+        super.selectionDidChange(textInput)
+        if !inserting { insertion.invalidate() }
+    }
+    private func refresh() {
+        guard visible else { return }
+        model.fullAccess = hasFullAccess
+        guard hasFullAccess else {
+            store = nil; model.result = nil; model.state = SessionSnapshot()
+            model.inserted = false; insertion.invalidate(); return
+        }
+        if store == nil { store = try? SessionStore.appGroup() }
+        if let snapshot = store?.snapshot() {
+            if snapshot.isLive() || snapshot.phase == .off || snapshot.phase == .failed {
+                let oldPhase = model.state.phase
+                model.state = snapshot
+                if model.needsHandoff, snapshot.phase == .ready, snapshot.isLive() {
+                    model.needsHandoff = false; model.issue = nil; autoListen = true
+                }
+                if snapshot.phase == .recording || snapshot.phase == .finishing { autoListen = false; waitingForMicrophone = false }
+                if oldPhase != snapshot.phase {
+                    UIAccessibility.post(notification: .announcement, argument: snapshot.phase.label)
+                }
+                if let pendingCommand, snapshot.acknowledgedCommand == pendingCommand.id {
+                    self.pendingCommand = nil; model.pending = false; model.issue = nil
+                }
+            } else {
+                if model.state.phase != .off { insertion.invalidate() }
+                model.state = snapshot.keyboardPresentation()
+            }
+        }
+        if let pendingCommand, pendingCommand.expiresAt <= Date() {
+            self.pendingCommand = nil; model.pending = false; insertion.invalidate(); autoListen = false
+            if pendingCommand.action == .start {
+                model.needsHandoff = true
+                model.issue = "Return to your app after On Air starts the microphone."
+            } else {
+                model.issue = "Dictation stopped. Open On Air if you need to recover your words."
+            }
+        }
+        if let destinationID = insertion.destinationID {
+            try? store?.publishKeyboardPresence(KeyboardPresence(destinationID: destinationID))
+        }
+        model.result = store?.result()
+        if let result = model.result {
+            model.uncertainDelivery = store?.wasClaimed(result.turnID) == true
+            if insertion.permits(result, documentID: textDocumentProxy.documentIdentifier, visible: visible) {
+                deliver(explicit: false)
+            }
+        }
+        if model.inserted, Date() >= resumeAfter {
+            model.inserted = false
+            if returnToTyping { returnToTyping = false; advanceToNextInputMode(); return }
+        }
+        if !model.pending, model.result == nil, model.state.phase == .failed, !model.state.canRetry,
+           autoListen || waitingForMicrophone {
+            // One handoff for a failed start; never reopen after Done or retry in a loop.
+            autoListen = false; waitingForMicrophone = false; model.needsHandoff = true
+        }
+        if autoListen, !model.state.microphoneAuthorized, !model.pending {
+            autoListen = false; waitingForMicrophone = false; model.needsHandoff = true
+        }
+        if autoListen, model.state.microphoneAuthorized, !model.pending, model.result == nil,
+           model.state.phase == .ready || model.state.phase == .off,
+           Date() >= resumeAfter {
+            model.inserted = false
+            send(.start)
+        }
+    }
+    private func leaveKeyboard() {
+        autoListen = false; waitingForMicrophone = false
+        if let destinationID = insertion.destinationID {
+            try? store?.clearKeyboardPresence(destinationID: destinationID)
+        }
+        if model.state.destinationID == insertion.destinationID, insertion.destinationID != nil,
+           model.state.phase == .recording || model.state.phase == .starting { send(.cancel) }
+        insertion.invalidate()
+    }
+    private func send(_ action: SessionAction) {
+        guard hasFullAccess else { model.issue = "Enable Allow Full Access in Settings for dictation."; return }
+        guard let store, let state = store.snapshot(), state.isLive() || (action == .start && state.phase == .off) ||
+                (action == .retry && state.phase == .failed && state.canRetry) else {
+            model.issue = "Open On Air to prepare your microphone, then return here."; return
+        }
+        if action == .start, !state.microphoneAuthorized || (state.phase != .ready && state.phase != .off) {
+            model.issue = "Open On Air to prepare your microphone, then return here."; return
+        }
+        let destination = action == .start ? insertion.capture(documentID: textDocumentProxy.documentIdentifier) : nil
+        if action == .finish || action == .cancel || action == .turnOff { autoListen = false; waitingForMicrophone = false }
+        if action == .finish { returnToTyping = true }
+        if action == .cancel { resumeAfter = Date().addingTimeInterval(0.3) }
+        if action == .cancel || action == .turnOff {
+            if let destinationID = insertion.destinationID { try? store.clearKeyboardPresence(destinationID: destinationID) }
+            insertion.invalidate()
+        }
+        let command = SessionCommand(action: action, snapshot: state, destinationID: destination)
+        do {
+            if let destination { try store.publishKeyboardPresence(KeyboardPresence(destinationID: destination)) }
+            try store.enqueue(command); pendingCommand = command; model.pending = true; model.issue = nil
+            if action == .start { autoListen = false; waitingForMicrophone = true }
+        } catch { insertion.invalidate(); autoListen = false; model.issue = "Could not contact On Air. Open On Air and try again." }
+    }
+    private func deliver(explicit: Bool) {
+        guard visible, hasFullAccess, let store, let result = store.result() else { return }
+        if !explicit {
+            guard insertion.permits(result, documentID: textDocumentProxy.documentIdentifier, visible: visible) else { return }
+        }
+        do {
+            guard let claimed = try store.claim(result.turnID, explicit: explicit) else { return }
+            // No async suspension between the destination check, claim and insertion.
+            inserting = true
+            textDocumentProxy.insertText(claimed.text)
+            inserting = false
+            if let destinationID = insertion.destinationID { try? store.clearKeyboardPresence(destinationID: destinationID) }
+            insertion.invalidate()
+            returnToTyping = true; model.inserted = true; resumeAfter = Date().addingTimeInterval(0.85)
+            try store.consume(claimed.turnID); model.result = nil
+            UIAccessibility.post(notification: .announcement, argument: "Transcript inserted")
+        } catch {
+            inserting = false; insertion.invalidate()
+            model.issue = "Delivery needs checking. Use Insert only if the text is missing."
+        }
+    }
+}

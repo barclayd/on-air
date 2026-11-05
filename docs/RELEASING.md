@@ -1,11 +1,12 @@
 # Releasing On Air
 
-The repository has two GitHub Actions workflows:
+The repository has three GitHub Actions workflows:
 
 - **Build and package checks** runs on pull requests and pushes to main that change the app, Xcode project, app tests, packaging/test tools, or either app workflow. Website, documentation, and unrelated GitHub metadata changes skip this workflow. It can also be run manually. It runs release validation tests and real Sparkle signature checks, the audio/credential/clipboard core checks, builds both Mac architectures, verifies the compiled app icon is included, and creates an explicitly unsigned test DMG. It has read-only repository permissions and no signing secrets. The test DMG is not a distributable release.
 - **Release On Air** runs on version tags or manually. It signs with Developer ID, notarizes and staples both the app and its DMG, checks Gatekeeper, and calculates the final checksum. Publishing uses a separate job with repository write permission and no Apple credentials.
+- **Release On Air iOS Beta** is manual and exports an internal-only TestFlight build. Its separate `ios-beta` environment holds iPhone signing credentials; it cannot publish an App Store release or distribute to an external group.
 
-Both use the stable `macos-26` runner and Xcode 26.6. Action versions are pinned to reviewed commit hashes. The desktop E2E suite and macOS 27 visual baselines remain a separate `Tools/test.sh` check on a logged-in Mac; the hosted checks do not claim to replace those or physical microphone testing.
+All use the stable `macos-26` runner and Xcode 26.6. Action versions are pinned to reviewed commit hashes. The desktop E2E suite and macOS 27 visual baselines remain a separate `Tools/test.sh` check on a logged-in Mac; the hosted checks do not claim to replace those or physical microphone testing.
 
 The automatic path filters live in `.github/workflows/ci.yml`; keep the pull-request and main-push lists in sync when adding app build inputs. Explicit version tags and manual runs remain deliberate build requests, regardless of changed paths. If branch protection is added, do not require this path-filtered workflow for every pull request: GitHub leaves required checks pending when a workflow is skipped by a path filter.
 
@@ -118,3 +119,74 @@ The stable feed URL is `https://github.com/barclayd/on-air/releases/latest/downl
 The app-specific key was created with Sparkle's `generate_keys --account com.danbarclay.onair.sparkle`. Its public key is in `OnAir/Info.plist`; the private seed is in the maintainer's Keychain and the encrypted `release` environment secret. Keep an independent secure backup before changing machines. Export only to a temporary file with mode 0600, pipe it into `gh secret set SPARKLE_PRIVATE_KEY --env release`, then remove the export. Never commit or upload private keys as artifacts. Build subprocesses do not inherit the secret; signing tools receive it on stdin. Do not regenerate the key per release. Follow Sparkle's documented key-rotation procedure if rotation is necessary.
 
 Because 1.0.6 and older do not contain an updater, users must replace the app manually once to install the first Sparkle-enabled version. Do not delete their preferences or Keychain entries. Thereafter Sparkle replaces the app in place and relaunches it after user confirmation. The final acceptance check before releasing the updater is an actual signed upgrade between two Sparkle-enabled versions on a disposable installation, including retained settings, Keychain access, permissions, and launch-at-login behavior if that feature is added later.
+
+
+## Internal iPhone beta
+
+Use the `OnAirPhone` scheme. App Store Connect must contain the iOS app
+`com.danbarclay.onair.ios`. The keyboard and activity extensions use `.keyboard`
+and `.activities`; all three need `group.com.danbarclay.onair.ios`. Keep the
+version/build equal across the three targets. No OpenAI key is used during
+packaging or stored in an artifact.
+
+For the first beta, a signed-in local Xcode account can provision and upload:
+
+```sh
+python3 Tools/ios_beta.py --automatic --version 1.1.0 --build 2   --output .build/ios-beta-2 --upload
+```
+
+Commit tracked changes first. Choose a fresh output directory and unused build
+number. The script verifies the archive and exported IPA signatures, team,
+App Group, target versions and profile expiry, then writes `build.json` and the
+IPA SHA-256. The export sets `testFlightInternalTestingOnly=true`; it is not an
+App Store submission. Local upload uses the existing Xcode account. Its final
+`uploaded` status means that processing and tester access still need checking
+in App Store Connect.
+
+If command-line export reports `No Accounts` while the account is available in
+Xcode, open the same `.xcarchive` in Xcode Organizer and choose **Distribute App
+→ TestFlight Internal Only**. Verify the bundle, version and build before upload,
+then record the actual uploaded build and its processing status. This fallback
+uses the existing signed-in account and does not require a new API credential.
+The release checks also reject transparent iOS app icons before archiving.
+
+After upload, follow that exact version/build through processing and compliance,
+then add it to an internal group containing Dan's existing eligible App Store
+Connect user. Confirm the group and build are available before giving TestFlight
+installation instructions. Keep public links and external groups disabled.
+Record the app/build IDs and source commit with the PR's build evidence. An
+installed development build and an available TestFlight build are different
+milestones; neither establishes real dictation acceptance without device checks.
+
+For repeatable hosted distribution, configure the separate `ios-beta`
+environment with restricted deployment branches/reviewers appropriate to the
+repository. It needs these secrets, supplied by the account owner:
+
+| Secret | Value |
+| --- | --- |
+| `IOS_DISTRIBUTION_P12_BASE64` | Apple Distribution certificate and private key, exported as a password-protected P12 and base64 encoded |
+| `IOS_DISTRIBUTION_PASSWORD` | P12 password |
+| `IOS_APP_PROFILE_BASE64` | App Store distribution profile for the containing app |
+| `IOS_KEYBOARD_PROFILE_BASE64` | App Store distribution profile for the keyboard |
+| `IOS_ACTIVITY_PROFILE_BASE64` | App Store distribution profile for the activity extension |
+| `APP_STORE_CONNECT_KEY_P8_BASE64` | Team API key authorised for uploading builds and managing the intended internal group |
+| `APP_STORE_CONNECT_KEY_ID` | API key ID |
+| `APP_STORE_CONNECT_ISSUER_ID` | Team issuer ID |
+
+Set environment variables `APP_STORE_CONNECT_APP_ID` and `IOS_INTERNAL_GROUP_ID`
+to the confirmed app and internal group. Do not assume the Mac notarisation key
+has these permissions. The initial beta does not require exporting or replacing
+local signing credentials: use the local account route while CI setup is pending.
+
+Once the workflow exists on the default branch, dispatch **Release On Air iOS
+Beta** on the intended trusted branch. It uses build number
+`run_number * 100 + run_attempt` (local builds 1–100 are reserved), rejects an
+existing version/build, verifies the group belongs to this app and is internal,
+and waits up to 30 minutes for processing before assigning that build. It reports
+`assigned-internal-group` only after reading the assignment back. If Apple is
+still processing, follow that build rather than uploading a duplicate. The
+14-day Actions artifact contains the IPA, hashes, manifest and diagnostic logs;
+signing credentials stay in temporary files/keychain and are cleaned up.
+
+The workflow's presence does not mean its environment or credentials have been
+configured. Check those separately before attempting hosted distribution.

@@ -1,0 +1,425 @@
+@preconcurrency import ActivityKit
+import AVFAudio
+import Combine
+import UIKit
+import OSLog
+import OnAirCore
+import OnAirSession
+
+/// One owner for UI, keyboard commands and headless system intents. All state
+/// transitions run on this actor; an old completion can never mutate a new turn.
+@MainActor
+final class SessionCoordinator: ObservableObject {
+    static let shared = SessionCoordinator()
+    @Published private(set) var state = SessionSnapshot()
+    @Published private(set) var microphoneGranted = AVAudioApplication.shared.recordPermission == .granted
+    @Published private(set) var microphoneUndetermined = AVAudioApplication.shared.recordPermission == .undetermined
+    private var permissionTask: Task<Bool, Never>?
+    @Published private(set) var transcript: TranscriptRecord?
+    private let capture: any AudioCapturing
+    private let store: SessionStore?
+    private let transcriber: any Transcribing
+    private let validateKey: () throws -> Void
+    private let microphonePermission: () -> Bool
+    private let systemIntegration: Bool
+    private enum ActivitySetupError: Error { case disabled }
+    private var loop: Task<Void, Never>?
+    private var completion: Task<Void, Never>?
+    private var activityWatcher: Task<Void, Never>?
+    private var activity: Activity<OnAirActivity>?
+    private var activityTail: Task<Void, Never>?
+    private var backgroundTask = UIBackgroundTaskIdentifier.invalid
+    private var finalisationID = UUID()
+    private var retryPCM = Data()
+    private var retryUntil: Date?
+    private var captureRequestedAt: Date?
+    private var wantsReady = false
+    private var seenCommands = Set<UUID>()
+    private var observers: [NSObjectProtocol] = []
+    private var lastPublished = Date.distantPast
+    private var lastSuccessfulPublish = Date()
+    private var publicationPending = false
+    private var lastPurge = Date.distantPast
+    private var lastActivityUpdate = Date.distantPast
+
+    private convenience init() {
+        self.init(store: try? SessionStore.appGroup(), capture: AudioCapture(),
+            transcriber: OpenAITranscriber(key: IPhoneKeychain.load, notes: {
+                UserDefaults.standard.string(forKey: DictationPreferences.notesKey) ?? ""
+            }), validateKey: { _ = try IPhoneKeychain.load() })
+    }
+    init(store: SessionStore?, capture: any AudioCapturing, transcriber: any Transcribing,
+         validateKey: @escaping () throws -> Void,
+         microphonePermission: @escaping () -> Bool = { AVAudioApplication.shared.recordPermission == .granted },
+         systemIntegration: Bool = true) {
+        self.store = store; self.capture = capture; self.transcriber = transcriber
+        self.validateKey = validateKey; self.microphonePermission = microphonePermission
+        self.systemIntegration = systemIntegration; self.microphoneGranted = microphonePermission()
+        // An activity left by a terminated process is never evidence of a live mic.
+        if systemIntegration { for orphan in Activity<OnAirActivity>.activities { Task { await orphan.end(nil, dismissalPolicy: .immediate) } } }
+        try? store?.purge()
+        transcript = store?.result()
+        publish()
+        let centre = NotificationCenter.default
+        for name in [AVAudioSession.interruptionNotification, AVAudioSession.mediaServicesWereResetNotification] {
+            observers.append(centre.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                Task { @MainActor in self?.interrupt() }
+            })
+        }
+        observers.append(centre.addObserver(forName: UIApplication.protectedDataWillBecomeUnavailableNotification,
+            object: nil, queue: .main) { [weak self] _ in
+                // End the turn on lock, but retain the gated keyboard session.
+                // New turns still require protected data to be available.
+                Task { @MainActor in self?.cancel() }
+            })
+        observers.append(centre.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
+            let reason = note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
+            guard reason == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue ||
+                  reason == AVAudioSession.RouteChangeReason.newDeviceAvailable.rawValue else { return }
+            Task { @MainActor in self?.interrupt() }
+        })
+        loop = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .milliseconds(50))
+                guard let self else { return }
+                self.tick()
+            }
+        }
+    }
+
+    /// Permission is requested in the foreground setup flow, independently of API credentials.
+    func prepareMicrophone() async {
+        // A URL can arrive before the receiving scene becomes active. Never ask
+        // TCC or activate the microphone during that transition.
+        if systemIntegration {
+            for _ in 0..<40 {
+                if UIApplication.shared.applicationState == .active { break }
+                try? await Task.sleep(for: .milliseconds(50))
+                if Task.isCancelled { return }
+            }
+            guard UIApplication.shared.applicationState == .active else { return }
+        }
+        if let permissionTask { _ = await permissionTask.value; refreshMicrophonePermission(); return }
+        let task = Task {
+            if AVAudioApplication.shared.recordPermission == .undetermined {
+                return await AVAudioApplication.requestRecordPermission()
+            }
+            return AVAudioApplication.shared.recordPermission == .granted
+        }
+        permissionTask = task
+        _ = await task.value
+        permissionTask = nil
+        refreshMicrophonePermission()
+    }
+    func refreshMicrophonePermission() {
+        microphoneUndetermined = AVAudioApplication.shared.recordPermission == .undetermined
+        microphoneGranted = microphonePermission()
+        if !microphoneGranted, state.phase != .off { turnOff() }
+        publish()
+    }
+
+    func activateReady() async {
+        guard state.phase == .off || state.phase == .failed, !state.canRetry else { return }
+        guard !systemIntegration || UIApplication.shared.applicationState == .active else { return }
+        await start(readyOnly: true, requiresActivity: false)
+    }
+    func startDictation(requiresActivity: Bool = false, destinationID: UUID? = nil) async {
+        if state.phase == .ready {
+            do { try ensureActivity(required: requiresActivity) }
+            catch { fail("Open On Air and check Live Activities in Settings."); return }
+            beginTurn(destinationID: destinationID); return
+        }
+        guard state.phase == .off || state.phase == .failed else { return }
+        await start(readyOnly: false, requiresActivity: requiresActivity, destinationID: destinationID)
+    }
+    private func start(readyOnly: Bool, requiresActivity: Bool, destinationID: UUID? = nil) async {
+        guard UIApplication.shared.isProtectedDataAvailable else { fail("Unlock your iPhone to start dictation"); return }
+        guard store != nil else { fail("App Group unavailable — reinstall the signed beta"); return }
+        guard microphonePermission() else {
+            fail("Allow microphone access in On Air Setup before dictating."); return
+        }
+        do { try validateKey() } catch { fail("Add and verify your OpenAI key in Setup"); return }
+        if let destinationID, store?.keyboardPresence()?.permits(destinationID) != true { return }
+        state.sessionID = UUID(); seenCommands.removeAll(); state.turnID = nil; state.destinationID = destinationID
+        state.phase = .starting; state.issue = nil; state.canRetry = false
+        retryPCM.removeAll(); retryUntil = nil
+        wantsReady = readyOnly || destinationID != nil
+        publish()
+        do { try ensureActivity(required: requiresActivity) }
+        catch {
+            fail(error is ActivitySetupError
+                 ? "Allow Live Activities for On Air in Settings to use this control."
+                 : "Open On Air before using this control.")
+            return
+        }
+        captureRequestedAt = Date()
+        state.audioAt = nil
+        do { try capture.start(collecting: !readyOnly) }
+        catch {
+            let failure = error as NSError
+            // Only codes are logged: no audio, transcripts, credentials or error userInfo.
+            Logger(subsystem: "com.danbarclay.onair.ios", category: "microphone").error("Start failed: domain=\(failure.domain, privacy: .public) code=\(failure.code) foreground=\(UIApplication.shared.applicationState == .active)")
+            if !microphonePermission() {
+                refreshMicrophonePermission()
+                fail("Allow microphone access in On Air Setup before dictating.")
+            } else if failure.domain == NSOSStatusErrorDomain,
+                      failure.code == AVAudioSession.ErrorCode.insufficientPriority.rawValue {
+                fail("The microphone is in use by a call or another app. Try again when it finishes.")
+            } else if UIApplication.shared.applicationState != .active {
+                fail("Open On Air to start the microphone, then return to your app.")
+            } else {
+                fail("The microphone is unavailable. Check your audio connection, then try again.")
+            }
+            return
+        }
+        do {
+            if !readyOnly {
+                state.turnID = UUID(); state.destinationID = destinationID
+                try store?.clearResult(); transcript = nil
+                transcriber.begin()
+            }
+            publish()
+        } catch { fail("Could not prepare dictation. Try again.") }
+    }
+    private func beginTurn(destinationID: UUID?) {
+        guard state.phase == .ready, state.isLive(), capture.running else { return }
+        guard UIApplication.shared.isProtectedDataAvailable else { cancel(); return }
+        guard microphonePermission() else { refreshMicrophonePermission(); return }
+        do { try validateKey() } catch { fail("Add and verify your OpenAI key in Setup"); return }
+        if let destinationID, store?.keyboardPresence()?.permits(destinationID) != true { return }
+        retryPCM.removeAll(); retryUntil = nil
+        state.turnID = UUID(); state.destinationID = destinationID
+        state.phase = .starting; state.issue = nil; state.canRetry = false
+        state.startedAt = nil; state.audioAt = nil; captureRequestedAt = Date()
+        do { try store?.clearResult() } catch { fail("Could not prepare dictation. Try again."); return }
+        transcript = nil
+        transcriber.begin(); capture.mailbox.gate(true); publish()
+    }
+    func finish(expectedTurn: UUID? = nil) {
+        guard state.phase == .recording, let turnID = state.turnID,
+              expectedTurn == nil || expectedTurn == turnID else { return }
+        // Drain the tail before closing the sample gate; no idle samples reach the socket.
+        ingest(capture.mailbox.take())
+        guard state.phase == .recording else { return }
+        // Keep the iOS audio session alive, as dictation keyboards must. The
+        // closed gate discards all idle samples before conversion or networking.
+        capture.mailbox.gate(false)
+        if !wantsReady { capture.stop() }
+        state.commandGeneration = UUID() // Reject any queued start from this turn.
+        state.phase = .finishing; state.level = 0; publish()
+        guard retryPCM.count >= 4_800 else { fail("No speech captured — try a longer dictation"); return }
+        finalise(turnID: turnID, retry: false)
+    }
+    func retry() {
+        guard state.phase == .failed, state.canRetry, let turnID = state.turnID,
+              let retryUntil, retryUntil > Date(), !retryPCM.isEmpty else { return }
+        state.phase = .finishing; state.issue = nil; state.canRetry = false; publish()
+        finalise(turnID: turnID, retry: true)
+    }
+    private func finalise(turnID: UUID, retry: Bool) {
+        let sessionID = state.sessionID
+        finalisationID = UUID()
+        let finalisationID = finalisationID
+        endBackgroundTask()
+        backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Finish dictation") { [weak self] in
+            Task { @MainActor in
+                guard let self, self.finalisationID == finalisationID,
+                      self.state.sessionID == sessionID, self.state.turnID == turnID,
+                      self.state.phase == .finishing else { return }
+                self.interrupt()
+            }
+        }
+        completion = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let result = try await (retry ? self.transcriber.retry(self.retryPCM) : self.transcriber.finish())
+                guard !Task.isCancelled, self.state.sessionID == sessionID, self.state.turnID == turnID,
+                      self.state.phase == .finishing, UIApplication.shared.isProtectedDataAvailable else { return }
+                let text = VersionNumberFormatter.format(result.trimmingCharacters(in: .whitespacesAndNewlines))
+                guard !text.isEmpty else { throw TranscriptionError.noAudio }
+                let record = TranscriptRecord(turnID: turnID, destinationID: self.state.destinationID, text: text)
+                try self.store?.save(record)
+                self.transcript = record; self.retryPCM.removeAll(); self.retryUntil = nil
+                self.state.canRetry = false; self.state.issue = nil
+                self.returnToReadyOrOff(); self.endBackgroundTask()
+            } catch {
+                guard !Task.isCancelled, self.state.sessionID == sessionID, self.state.turnID == turnID else { return }
+                self.retryUntil = Date().addingTimeInterval(300)
+                self.fail((error as? TranscriptionError)?.localizedDescription ?? "Could not save the transcript — try again", retainAudio: true)
+                self.endBackgroundTask()
+            }
+        }
+    }
+    func cancel(expectedTurn: UUID? = nil) {
+        guard expectedTurn == nil || expectedTurn == state.turnID else { return }
+        state.commandGeneration = UUID()
+        completion?.cancel(); completion = nil; transcriber.cancel()
+        capture.mailbox.gate(false)
+        if !wantsReady { capture.stop() }
+        retryPCM.removeAll(); retryUntil = nil
+        state.turnID = nil; state.destinationID = nil; state.canRetry = false; state.issue = nil
+        try? store?.clearResult(); transcript = nil
+        returnToReadyOrOff(); endBackgroundTask()
+    }
+    func turnOff() {
+        wantsReady = false; cancel()
+        state.sessionID = UUID(); seenCommands.removeAll(); publish()
+    }
+    func copyTranscript() {
+        guard let result = store?.result() else { transcript = nil; return }
+        UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: result.text]], options: [
+            .localOnly: true, .expirationDate: Date().addingTimeInterval(120)])
+        try? store?.consume(result.turnID); transcript = nil
+    }
+    private func interrupt() {
+        let wasActive = state.phase != .off
+        turnOff()
+        if wasActive { state.issue = "Session ended. Open On Air to start again."; publish() }
+    }
+    private func returnToReadyOrOff() {
+        state.level = 0; state.startedAt = nil
+        transcriber.shutdown()
+        if wantsReady, capture.running {
+            state.phase = .ready
+        } else {
+            capture.stop(); state.phase = .off; wantsReady = false
+        }
+        publish()
+    }
+    private func fail(_ message: String, retainAudio: Bool = false) {
+        capture.mailbox.gate(false)
+        if !retainAudio || !wantsReady || !capture.running { capture.stop(); wantsReady = false }
+        transcriber.shutdown()
+        state.phase = .failed; state.issue = message; state.level = 0
+        state.canRetry = retainAudio && !retryPCM.isEmpty
+        if !state.canRetry { retryPCM.removeAll(); retryUntil = nil }
+        publish(); endBackgroundTask()
+    }
+    private func ingest(_ batch: AudioMailbox.Batch) {
+        if let audioAt = batch.audioAt { state.audioAt = audioAt }
+        guard state.phase == .recording || state.phase == .starting else { return }
+        if batch.overflow { fail("Audio capture fell behind — please try again"); return }
+        guard state.turnID != nil else { return }
+        if !batch.pcm.isEmpty {
+            guard retryPCM.count + batch.pcm.count <= 14_400_000 else { finish(); return }
+            retryPCM.append(batch.pcm); transcriber.append(batch.pcm); state.level = batch.level
+        }
+    }
+    private func tick() {
+        let now = Date()
+        if (state.phase == .starting || state.phase == .recording), let destinationID = state.destinationID,
+           store?.keyboardPresence()?.permits(destinationID, at: now) != true {
+            cancel(expectedTurn: state.turnID)
+        }
+        if capture.running {
+            ingest(capture.mailbox.take())
+            if state.phase == .starting, let audioAt = state.audioAt,
+               audioAt >= (captureRequestedAt ?? .distantFuture) {
+                state.phase = state.turnID == nil ? .ready : .recording
+                state.startedAt = state.turnID == nil ? nil : audioAt
+                publish()
+            }
+            if state.phase == .starting, now.timeIntervalSince(captureRequestedAt ?? now) > 2 {
+                fail("The microphone did not start — try again")
+            } else if state.phase != .starting, now.timeIntervalSince(state.audioAt ?? now) > 2 {
+                interrupt()
+            }
+        }
+        if state.phase == .recording, now.timeIntervalSince(state.startedAt ?? now) >= 300 { finish() }
+        if let retryUntil, retryUntil <= now {
+            retryPCM.removeAll(); self.retryUntil = nil; state.canRetry = false
+            if state.phase == .failed, wantsReady, capture.running {
+                state.issue = nil; returnToReadyOrOff()
+            } else { publish() }
+        }
+        if now.timeIntervalSince(lastPublished) >= 0.1 {
+            if let commands = try? store?.drain() {
+                for command in commands {
+                    guard !seenCommands.contains(command.id), command.applies(to: state, at: now) else { continue }
+                    seenCommands.insert(command.id); state.acknowledgedCommand = command.id
+                    switch command.action {
+                    case .start:
+                        if state.phase == .ready { beginTurn(destinationID: command.destinationID) }
+                        else { Task { await self.startDictation(destinationID: command.destinationID) } }
+                    case .finish: finish(expectedTurn: command.turnID)
+                    case .cancel: cancel(expectedTurn: command.turnID)
+                    case .turnOff: turnOff()
+                    case .retry: retry()
+                    }
+                }
+            }
+            if publicationPending || (state.phase != .off && state.phase != .failed) { publish(updateActivity: false) }
+        }
+        if now.timeIntervalSince(lastPurge) > 1 {
+            try? store?.purge(); transcript = store?.result(); lastPurge = now
+        }
+        if activity != nil, now.timeIntervalSince(lastActivityUpdate) >= 15 { syncActivity() }
+    }
+    private func publish(updateActivity: Bool = true) {
+        state.microphoneAuthorized = microphonePermission()
+        state.revision &+= 1; state.updatedAt = Date(); lastPublished = state.updatedAt
+        do {
+            try store?.publish(state)
+            lastSuccessfulPublish = Date(); publicationPending = false
+        } catch SessionStore.StoreError.busy {
+            publicationPending = true
+            if Date().timeIntervalSince(lastSuccessfulPublish) > 1 {
+                capture.stop(); transcriber.shutdown(); wantsReady = false
+                state.phase = .failed; state.issue = "Shared keyboard connection unavailable"
+                syncActivity()
+            }
+        } catch {
+            // An extension must never act on an unpublishable recording state.
+            capture.stop(); transcriber.shutdown(); wantsReady = false
+            state.phase = .failed; state.issue = "Shared keyboard connection unavailable"
+            syncActivity()
+        }
+        if updateActivity { syncActivity() }
+    }
+    private func activityContent() -> ActivityContent<OnAirActivity.ContentState> {
+        ActivityContent(state: .init(phase: state.phase.rawValue, label: state.phase.label,
+            turnID: state.turnID?.uuidString ?? "", startedAt: state.startedAt),
+            staleDate: Date().addingTimeInterval(30))
+    }
+    private func ensureActivity(required: Bool) throws {
+        guard systemIntegration else { return }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+            if required { throw ActivitySetupError.disabled }; return
+        }
+        // Optional presentation must never block microphone startup. iOS can
+        // reject new activities while the containing app is in the background.
+        guard required || UIApplication.shared.applicationState == .active else { return }
+        if activity == nil {
+            let current: Activity<OnAirActivity>
+            do { current = try Activity.request(attributes: OnAirActivity(sessionID: state.sessionID.uuidString), content: activityContent(), pushType: nil) }
+            catch { if required { throw error }; return }
+            activity = current
+            activityWatcher?.cancel()
+            activityWatcher = Task { [weak self] in
+                for await status in current.activityStateUpdates {
+                    guard !Task.isCancelled else { return }
+                    if status == .dismissed || status == .ended {
+                        guard let self, self.activity?.id == current.id else { return }
+                        self.turnOff(); return
+                    }
+                }
+            }
+        }
+    }
+    private func syncActivity() {
+        guard let current = activity else { return }
+        lastActivityUpdate = Date()
+        let content = activityContent()
+        let ends = state.phase == .off || (state.phase == .failed && !capture.running)
+        let previous = activityTail
+        if ends { activity = nil; activityWatcher?.cancel(); activityWatcher = nil }
+        activityTail = Task {
+            await previous?.value
+            if ends { await current.end(content, dismissalPolicy: .immediate) }
+            else { await current.update(content) }
+        }
+    }
+    private func endBackgroundTask() {
+        if backgroundTask != .invalid { UIApplication.shared.endBackgroundTask(backgroundTask); backgroundTask = .invalid }
+    }
+}

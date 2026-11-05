@@ -1,0 +1,181 @@
+import AVFAudio
+import SwiftUI
+import OnAirCore
+import OnAirSession
+
+struct PhoneHome: View {
+    @ObservedObject var coordinator: SessionCoordinator
+    @State private var showSetup = false
+    @State private var practice = ""
+    @FocusState private var practiceFocused: Bool
+    @State private var hasKey = false
+    private var active: Bool { [.starting, .recording, .finishing].contains(coordinator.state.phase) }
+
+    @Environment(\.scenePhase) private var scenePhase
+    var body: some View {
+        NavigationStack {
+            Form {
+                if !coordinator.microphoneGranted {
+                    Section("Microphone") {
+                        MicrophoneAccess(coordinator: coordinator)
+                    }
+                }
+                if !hasKey {
+                    Section {
+                        Button("Set up On Air") { showSetup = true }
+                    }
+                }
+                if coordinator.state.phase == .ready {
+                    Section {
+                        Label("Ready for dictation", systemImage: "mic")
+                    } footer: {
+                        Text("The microphone stays available for your keyboard. Idle audio is discarded.")
+                    }
+                }
+                if active && coordinator.state.destinationID == nil && !practiceFocused {
+                    DictationPanel(phase: coordinator.state.phase, level: coordinator.state.level,
+                        startedAt: coordinator.state.startedAt, cancel: { coordinator.cancel() }, finish: { coordinator.finish() })
+                        .frame(height: 260).listRowInsets(EdgeInsets())
+                }
+                if let issue = coordinator.state.issue {
+                    Section {
+                        Text(issue).foregroundStyle(.secondary)
+                        if coordinator.state.canRetry { Button("Retry transcription") { coordinator.retry() } }
+                        else if coordinator.microphoneGranted && hasKey && coordinator.state.phase == .failed {
+                            Button("Try microphone again") { Task { await coordinator.activateReady() } }
+                        }
+                    }
+                }
+                if let result = coordinator.transcript {
+                    Section("Transcript") {
+                        Text(result.text).textSelection(.enabled)
+                        Button("Copy transcript", systemImage: "doc.on.doc") { coordinator.copyTranscript() }
+                    }
+                }
+                if coordinator.microphoneGranted && hasKey {
+                    Section {
+                        Text("Choose On Air from your keyboard list to dictate.").foregroundStyle(.secondary)
+                        TextField("Tap here, then select On Air", text: $practice, axis: .vertical)
+                            .lineLimit(3...6).focused($practiceFocused).accessibilityIdentifier("practiceField")
+                    }
+                }
+            }
+            .navigationTitle("On Air").navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("Setup", systemImage: "slider.horizontal.3") { showSetup = true } } }
+            .sheet(isPresented: $showSetup, onDismiss: refreshKey) { PhoneSetup(coordinator: coordinator) }
+            .onAppear(perform: refreshKey)
+            .task { coordinator.refreshMicrophonePermission() }
+            .onChange(of: coordinator.microphoneGranted) { _, granted in
+                if granted { refreshKey() }
+            }
+            .onChange(of: scenePhase) { _, phase in
+                if phase == .active { coordinator.refreshMicrophonePermission(); refreshKey() }
+            }
+        }
+    }
+    private func refreshKey() {
+        hasKey = (try? IPhoneKeychain.load()) != nil
+        if hasKey, coordinator.microphoneGranted {
+            Task { await coordinator.activateReady() }
+        }
+    }
+}
+
+struct PhoneSetup: View {
+    @ObservedObject var coordinator: SessionCoordinator
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(DictationPreferences.notesKey) private var notes = ""
+    @State private var key = ""
+    @State private var saved = false
+    @State private var status: String?
+    @State private var verification: Task<Void, Never>?
+    @State private var verifying = false
+    @State private var verificationID = UUID()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Microphone") {
+                    MicrophoneAccess(coordinator: coordinator)
+                }
+                Section {
+                    SecureField(saved ? "Replace OpenAI key" : "OpenAI API key", text: $key)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        .privacySensitive().accessibilityIdentifier("apiKeyField")
+                    Button(verifying ? "Checking connection…" : "Verify and save key", action: verify)
+                        .disabled(verifying || key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    if let status { Text(status).font(.footnote).foregroundStyle(.secondary) }
+                    if saved {
+                        Button("Remove saved key", role: .destructive) {
+                            verificationID = UUID(); verification?.cancel(); verifying = false
+                            coordinator.turnOff()
+                            do { try IPhoneKeychain.remove(); saved = false; status = "Key removed" }
+                            catch { status = "Could not remove the key. Try again." }
+                        }
+                    }
+                } header: { Text("1 · Your OpenAI key") } footer: {
+                    Text("Stored in this iPhone’s Keychain. Only the On Air app reads it; the keyboard never receives your key. Dictation uses your OpenAI account and API billing.")
+                }
+                Section {
+                    Text("Settings → General → Keyboard → Keyboards → Add New Keyboard → On Air")
+                    Text("Then select On Air and enable Allow Full Access.")
+                    Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+                } header: { Text("2 · Enable the keyboard") } footer: {
+                    Text("Full Access lets the keyboard send recording commands to On Air. Switch to Apple’s keyboard for typing. Typed text and surrounding field content are never sent to OpenAI.")
+                }
+                Section {
+                    TextField("Names, vocabulary and spelling preferences", text: $notes, axis: .vertical)
+                        .lineLimit(3...6)
+                        .onChange(of: notes) { _, value in if value.count > DictationPreferences.notesLimit { notes = String(value.prefix(DictationPreferences.notesLimit)) } }
+                } header: { Text("3 · Make it yours") } footer: {
+                    Text("Choose On Air from your keyboard list to dictate. Done ends your dictation and inserts your words. The microphone stays ready for your next keyboard selection.")
+                }
+                Section("Shortcuts and Control Centre") {
+                    Text("Add On Air’s Dictate control in Control Centre, or choose “Dictate with On Air” in Shortcuts or your Action Button settings. Tap again to finish. Allow Live Activities in Settings for background recording.")
+                }
+                Section("Privacy") {
+                    Text("To avoid opening On Air for every dictation, iOS microphone access stays active in the background. The microphone indicator remains visible. Idle audio is discarded immediately; only active dictations are sent directly to OpenAI. Dismiss On Air’s Live Activity or close On Air to release the microphone. Failed audio stays only in memory for up to five minutes so you can retry. Completed text is briefly saved in a protected, backup-excluded shared file for keyboard delivery; it expires after five minutes and is deleted when consumed or when the app next runs after expiry. No audio files or dictation history are saved. No analytics are collected.")
+                    Link("OpenAI data controls", destination: URL(string: "https://platform.openai.com/docs/guides/your-data")!)
+                }
+            }.navigationTitle("Set up On Air").navigationBarTitleDisplayMode(.inline)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+                .onAppear { saved = (try? IPhoneKeychain.load()) != nil }
+                .onDisappear { verificationID = UUID(); verification?.cancel(); key = "" }
+        }
+    }
+    private func verify() {
+        let value = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard value.hasPrefix("sk-") else { status = "Enter an OpenAI API key"; return }
+        coordinator.turnOff()
+        verification?.cancel(); let id = UUID(); verificationID = id; verifying = true; status = nil
+        verification = Task {
+            let client = OpenAITranscriber(key: { value })
+            defer { client.shutdown(); if verificationID == id { verifying = false } }
+            do {
+                try await client.verifyConnection()
+                guard !Task.isCancelled, verificationID == id else { return }
+                try IPhoneKeychain.save(value)
+                saved = true; key = ""; status = "Key verified and saved"
+            } catch {
+                guard !Task.isCancelled, verificationID == id else { return }
+                status = (error as? TranscriptionError)?.localizedDescription ?? "Could not save the key. Try again."
+            }
+        }
+    }
+}
+
+/// Permission is a one-time iOS consent step, separate from recording controls.
+private struct MicrophoneAccess: View {
+    @ObservedObject var coordinator: SessionCoordinator
+    var body: some View {
+        if coordinator.microphoneGranted {
+            Label("Allowed", systemImage: "checkmark.circle")
+        } else if coordinator.microphoneUndetermined {
+            Text("On Air needs microphone access to hear your dictation.")
+            Button("Allow microphone access") { Task { await coordinator.prepareMicrophone() } }
+        } else {
+            Text("Microphone access is denied. Allow On Air to use the microphone in Settings.")
+            Button("Open Settings") { UIApplication.shared.open(URL(string: UIApplication.openSettingsURLString)!) }
+        }
+    }
+}
