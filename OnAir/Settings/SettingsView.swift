@@ -1,3 +1,6 @@
+#if ON_AIR_PACKAGES
+import OnAirVisuals
+#endif
 import AppKit
 import SwiftUI
 

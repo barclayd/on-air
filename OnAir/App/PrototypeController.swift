@@ -1,3 +1,9 @@
+#if ON_AIR_PACKAGES
+import OnAirCore
+#endif
+#if ON_AIR_PACKAGES
+import OnAirVisuals
+#endif
 import AppKit
 import AVFoundation
 import ApplicationServices
@@ -51,7 +57,7 @@ final class PrototypeController {
          meter: any MicrophoneMeasuring = MicrophoneMeter(),
          microphoneAuthorization: any MicrophoneAuthorizing = SystemMicrophoneAuthorization(),
          accessibilityTrusted: @escaping () -> Bool = { AXIsProcessTrusted() },
-         transcriber: any Transcribing = OpenAITranscriber(),
+         transcriber: any Transcribing = OpenAITranscriber(key: APIKeyStore.load, notes: { UserDefaults.standard.string(forKey: DictationPreferences.notesKey) ?? "" }),
          inserter: any TranscriptInserting = TranscriptInserter(),
          glow: GlowPreferences = GlowPreferences(),
          recoveryLifetime: TimeInterval = 300) {

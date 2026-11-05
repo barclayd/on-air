@@ -1,3 +1,9 @@
+#if ON_AIR_PACKAGES
+import OnAirCore
+#endif
+#if ON_AIR_PACKAGES
+import OnAirVisuals
+#endif
 import AppKit
 import SwiftUI
 import AVFoundation
